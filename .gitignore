@@ -1,0 +1,77 @@
+# ============================================
+# Car_Panel - 汽车双 ECU 仪表盘项目 .gitignore
+# ============================================
+
+# ---------- Keil MDK / MDK-ARM ----------
+# 用户特定文件（每个开发者不同）
+*.uvguix.*
+*.uvoptx
+*.uvopt
+
+# 编译中间产物
+*.o
+*.d
+*.crf
+*.htm
+*.dep
+*.lst
+*.map
+*.axf
+*.lnp
+*.i
+*.s
+
+# 调试配置
+DebugConfig/
+RTE/
+
+# 编译输出目录
+Listings/
+Objects/
+
+# Event Recorder
+*.scvd
+
+# ---------- 编译产物 ----------
+*.bin
+*.hex
+*.elf
+*.lib
+
+# ---------- STM32CubeMX 生成 ----------
+# 保留 .ioc 文件（可复现生成）
+# 忽略 CubeMX 自动生成的驱动文件（可随时从 .ioc 重新生成）
+# 但保留用户修改的 Core/Src 和 Core/Inc
+**/Drivers/STM32F4xx_HAL_Driver/
+**/Drivers/STM32F1xx_HAL_Driver/
+**/Drivers/CMSIS/
+**/Middlewares/Third_Party/FreeRTOS/Source/portable/
+**/Middlewares/Third_Party/LVGL/
+
+# ---------- IDE ----------
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ---------- 系统文件 ----------
+Thumbs.db
+Desktop.ini
+.DS_Store
+ehthumbs.db
+
+# ---------- Python ----------
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+
+# ---------- 临时/日志 ----------
+*.log
+*.tmp
+
+# ---------- 大文件 ----------
+# 原理图 PDF 保留版本管理（较小），但排除超大仿真文件
+*.wav
+*.mp4
