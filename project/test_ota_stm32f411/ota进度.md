@@ -1,6 +1,6 @@
 # OTA 实现进度
 
-> 最后更新：2026-06-14
+> 最后更新：2026-06-14 22:30
 > 文件用途：AI 读取此文件即可了解当前进度、下一步任务和已知问题
 
 ---
@@ -43,16 +43,25 @@
   - `delay_ms()` — SysTick 轮询延时（不使用中断）
   - `partition_is_valid()` — 检查 App 分区栈指针合法性
 - **编译通过 ✓**
-- **串口测试通过 ✓**（115200, PA9/PA10）：
+- **无 App 时串口测试 ✓**（115200, PA9/PA10）：
   ```
   ================================
   Bootloader v1.0 (STM32F411)
   Flash: 512KB (0x08000000 - 0x0807FFFF)
   ================================
-  [BOOT] App A @ 0x08010000: SP=0xFFFFFFFF PC=0xFFFFFFFF
+  [BOOT] App A @ 0x08010000: PC=0xFFFFFFFF
   [BOOT] App A invalid, staying in bootloader.
   [BOOT] Waiting for YMODEM upgrade...
   ```
+- **Bootloader→App 跳转链路验证通过 ✓**：
+  ```
+  [BOOT] App A looks valid, jumping...
+  [BOOT] Jumping to App at 0x08010000...
+  [BOOT]   SP = 0x20000418, PC = 0x0801019D
+  [APP] VTOR=0x08010000  ← 确认向量表正确指向 App A
+  hello
+  ```
+- **App VTOR 验证 ✓**：`SCB->VTOR = 0x08010000`，中断向量表正确
 
 ---
 
@@ -119,6 +128,9 @@ bootloader/
 ### 已完成文件
 
 ```
+app/
+└── main.c             ✅（最小 App，验证跳转）
+
 bootloader/
 ├── boot_config.h      ✅
 └── boot_main.c        ✅（阶段一+二）
@@ -143,3 +155,5 @@ firmware/cmsis/device/
 | #1 | Workspace 文件格式不兼容，Keil 自动重建 | 已解决（Keil 自动生成正确格式） |
 | #2 | `fputc` 多重定义（boot_main.c 和 usart.c） | 已解决（删掉 boot_main.c 中的重复定义） |
 | #3 | 旧工程文件残留（stm32f411.uvprojx） | 已解决（已删除） |
+| #4 | `partition_is_valid()` 未调用 | 已解决（main() 中改用函数调用替代内联判断） |
+| #5 | Bootloader→App 跳转后疑似复位 | 已解决（实为手动复位，跳转链路正常） |
