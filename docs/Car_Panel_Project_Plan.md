@@ -164,7 +164,7 @@
 | FSMC_NOE (RD) | PD4 | |
 | FSMC_NWE (WR) | PD5 | |
 | FSMC_NE4 (CS) | PG12 | |
-| FSMC_A0 (RS/DC) | PF0 | 数据/命令选择 |
+| FSMC_A6 (RS/DC) | PF12 | 数据/命令选择（原理图液晶接口用 A6 非 A0） |
 | LCD_RESET | PF11 | 单独 GPIO，不用 NRST |
 | LCD_BL | PB15 | 板载 Q2 PNP，默认高电平亮 |
 | **XPT2046 触摸（SPI1，与 W25Q16 共享总线）** | | |
@@ -204,7 +204,7 @@
 | PB14 同时是 W25Q16 CS 和"板上 F_CS"标注 | 给板载 W25Q16，触摸 CS 用 PA4 |
 | PB15 同时是 LCD_BL 和 SPI2_MOSI | LCD_BL 优先，SPI2 不用 |
 | PC8–PC12 同时是 SDIO 和 SPI3 | 第一版不焊 SD 卡，PC10/11/12 给 SPI3 |
-| PF0/PF1 同时是 FSMC_A0/A1 和 I2C2_SDA/SCL | FSMC 优先，I2C 用 I2C3 |
+| PF0/PF1 同时是 FSMC_A0/A1 和 I2C2_SDA/SCL | LCD RS 已用 A6(PF12)，A0/A1 不占用；I2C 仍用 I2C3，无冲突 |
 | PC9 同时是 SDIO_D1 和 I2C3_SDA（默认） | 不焊 SD 卡，PC9 给 I2C3_SDA |
 
 **结论：无未解决的冲突。**
@@ -217,14 +217,14 @@
 | /CS | PG12（FSMC_NE4） |
 | /WR | PD5（FSMC_NWE） |
 | /RD | PD4（FSMC_NOE） |
-| RS (DC) | PF0（FSMC_A0，地址线兼任数据/命令选择） |
+| RS (DC) | PF12（FSMC_A6，地址线兼任数据/命令选择） |
 | /RST | PF11 |
 | BL | PB15（Q2 控制） |
 | T_SCK/MISO/MOSI | PB3/PB4/PB5（SPI1 共享） |
 | T_CS | PA4 |
 | T_PEN | PA5（可选） |
 
-> 关键：FSMC 配 8080 模式，地址线 A0 作 RS，数据宽度 16 bit，`LCD_RS` 用地址最低位 A0 区分命令/数据。
+> 关键：FSMC 配 8080 模式，地址线 A6 作 RS，数据宽度 16 bit。A6=HADDR[7]，所以命令地址偏移 0x00，数据地址偏移 0x80。
 
 ### 3.4 FSMC 时序参数参考（8080 LCD）
 
@@ -233,7 +233,7 @@
 ```c
 // FSMC_NORSRAM_InitTypeDef / FSMC_NORSRAM_TimingInitTypeDef
 // Bank 1, Subbank 4 (NE4 → PG12)
-// 数据宽度 16 bit，地址线 A0 作 RS
+// 数据宽度 16 bit，地址线 A6 (PF12) 作 RS
 
 // 读时序（LCD -> MCU，一般较慢）
 read_timing.AddressSetupTime    = 0;   // ADDSET：0 HCLK ≈ 0 ns
@@ -254,10 +254,10 @@ write_timing.DataLatency        = 2;
 write_timing.AccessMode         = FSMC_ACCESS_MODE_A;
 
 // 写入数据时：
-// 命令地址 = 0x6C000000（FSMC Bank1 Subbank4，A0=0）
-// 数据地址 = 0x6C000002（FSMC Bank1 Subbank4，A0=1）
+// 命令地址 = 0x6C000000（FSMC Bank1 Subbank4，A6=0）
+// 数据地址 = 0x6C000080（FSMC Bank1 Subbank4，A6=1；16bit 模式下 A6=HADDR[7]，偏移 0x80）
 #define LCD_CMD_ADDR  (*((__IO uint16_t*)0x6C000000))
-#define LCD_DATA_ADDR (*((__IO uint16_t*)0x6C000002))
+#define LCD_DATA_ADDR (*((__IO uint16_t*)0x6C000080))  // A6=1 → HADDR[7]=1 → offset=0x80
 ```
 
 > **调试提示**：如果 LCD 白屏无显示，先检查 FSMC 地址映射（Bank1 NE4 = 0x6C000000）；如果花屏，检查 DataSetupTime 是否太小。
