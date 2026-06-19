@@ -424,6 +424,46 @@
               <FileType>5</FileType>
               <FilePath>..\bootloader\ymodem.h</FilePath>
             </File>
+            <File>
+              <FileName>boot_jump.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\bootloader\boot_jump.c</FilePath>
+            </File>
+            <File>
+              <FileName>boot_jump.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\bootloader\boot_jump.h</FilePath>
+            </File>
+            <File>
+              <FileName>key.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\bootloader\key.c</FilePath>
+            </File>
+            <File>
+              <FileName>key.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\bootloader\key.h</FilePath>
+            </File>
+            <File>
+              <FileName>boot_decision.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\bootloader\boot_decision.c</FilePath>
+            </File>
+            <File>
+              <FileName>boot_decision.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\bootloader\boot_decision.h</FilePath>
+            </File>
+            <File>
+              <FileName>ota.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\bootloader\ota.c</FilePath>
+            </File>
+            <File>
+              <FileName>ota.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\bootloader\ota.h</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
