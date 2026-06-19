@@ -11,4 +11,4 @@ void UART_SendString(char *String);
 void UART_SendNumber(uint32_t Number, uint8_t Length);
 int fputc(int ch, FILE *f);
 void UART_Printf(char *format, ...);
-#endif 
+#endif

@@ -369,10 +369,12 @@
  #define PLL_M      8
 #elif defined (STM32F410xx) || defined (STM32F411xE)
  #if defined(USE_HSE_BYPASS)
-  #define PLL_M      8    
- #else /* !USE_HSE_BYPASS */
-  #define PLL_M      16
- #endif /* USE_HSE_BYPASS */
+  #define PLL_M      8
+ #elif defined(USE_HSE)
+  #define PLL_M      25    // 25MHz / 25 = 1MHz
+ #else /* !USE_HSE && !USE_HSE_BYPASS */
+  #define PLL_M      16    // 16MHz / 16 = 1MHz (HSI)
+ #endif
 #else
 #endif /* STM32F40_41xxx || STM32F427_437xx || STM32F429_439xx || STM32F401xx || STM32F469_479xx */  
 
@@ -510,11 +512,19 @@ void SystemInit(void)
   SetSysClock();
 
   /* Configure the Vector Table location add offset address ------------------*/
+  /*
+   * Bootloader 模式下，VTOR 指向 0x08000000。
+   * App 模式下不覆盖 VTOR——Bootloader 在跳转前已设置正确的地址
+   * （App A = 0x08010000 或 App B = 0x08040000）。
+   * App 在 main() 中会用 SCB->VTOR 自检。
+   */
+#ifdef BOOTLOADER
 #ifdef VECT_TAB_SRAM
-  SCB->VTOR = SRAM_BASE | VECT_TAB_OFFSET; /* Vector Table Relocation in Internal SRAM */
+  SCB->VTOR = SRAM_BASE | VECT_TAB_OFFSET;
 #else
-  SCB->VTOR = FLASH_BASE | VECT_TAB_OFFSET; /* Vector Table Relocation in Internal FLASH */
+  SCB->VTOR = FLASH_BASE | VECT_TAB_OFFSET;
 #endif
+#endif /* BOOTLOADER */
 }
 
 /**
@@ -830,43 +840,115 @@ static void SetSysClock(void)
   { /* If HSE fails to start-up, the application will have wrong clock
          configuration. User can add here some code to deal with this error */
   }
+#elif defined(USE_HSE)
+  /* HSE crystal (25MHz) used as PLL clock source */
+  {
+    __IO uint32_t StartUpCounter = 0, HSEStatus = 0;
+
+    /* Enable HSE (no bypass) */
+    RCC->CR |= RCC_CR_HSEON;
+
+    /* Wait till HSE is ready */
+    do
+    {
+      HSEStatus = RCC->CR & RCC_CR_HSERDY;
+      StartUpCounter++;
+    } while((HSEStatus == 0) && (StartUpCounter != HSE_STARTUP_TIMEOUT));
+
+    if ((RCC->CR & RCC_CR_HSERDY) != RESET)
+    {
+      HSEStatus = (uint32_t)0x01;
+    }
+    else
+    {
+      HSEStatus = (uint32_t)0x00;
+    }
+
+    if (HSEStatus == (uint32_t)0x01)
+    {
+      /* Select regulator voltage output Scale 1 mode */
+      RCC->APB1ENR |= RCC_APB1ENR_PWREN;
+      PWR->CR |= PWR_CR_VOS;
+
+      /* HCLK = SYSCLK / 1 */
+      RCC->CFGR |= RCC_CFGR_HPRE_DIV1;
+      /* PCLK2 = HCLK / 2 */
+      RCC->CFGR |= RCC_CFGR_PPRE2_DIV1;
+      /* PCLK1 = HCLK / 2 */
+      RCC->CFGR |= RCC_CFGR_PPRE1_DIV2;
+
+      /* Configure PLL: HSE(25MHz) / 25 = 1MHz, * 400 = 400MHz, / 4 = 100MHz */
+      RCC->PLLCFGR = PLL_M | (PLL_N << 6) | (((PLL_P >> 1) -1) << 16) |
+                     (RCC_PLLCFGR_PLLSRC_HSE) | (PLL_Q << 24);
+
+      /* Enable the main PLL */
+      RCC->CR |= RCC_CR_PLLON;
+      while((RCC->CR & RCC_CR_PLLRDY) == 0);
+
+      /* Configure Flash: 3 wait states for 100MHz */
+      FLASH->ACR = FLASH_ACR_PRFTEN | FLASH_ACR_ICEN |
+                   FLASH_ACR_DCEN | FLASH_ACR_LATENCY_3WS;
+
+      /* Select PLL as system clock */
+      RCC->CFGR &= (uint32_t)((uint32_t)~(RCC_CFGR_SW));
+      RCC->CFGR |= RCC_CFGR_SW_PLL;
+      while ((RCC->CFGR & (uint32_t)RCC_CFGR_SWS) != RCC_CFGR_SWS_PLL);
+    }
+    else
+    { /* HSE fail — fallback to HSI */
+      RCC->APB1ENR |= RCC_APB1ENR_PWREN;
+      PWR->CR |= PWR_CR_VOS;
+      RCC->CFGR |= RCC_CFGR_HPRE_DIV1;
+      RCC->CFGR |= RCC_CFGR_PPRE2_DIV1;
+      RCC->CFGR |= RCC_CFGR_PPRE1_DIV2;
+      /* PLL source = HSI (default), M=16 -> 16/16*400/4=100MHz */
+      RCC->PLLCFGR = 16 | (400 << 6) | (((4 >> 1) - 1) << 16) | (7 << 24);
+      RCC->CR |= RCC_CR_PLLON;
+      while((RCC->CR & RCC_CR_PLLRDY) == 0);
+      FLASH->ACR = FLASH_ACR_PRFTEN | FLASH_ACR_ICEN |
+                   FLASH_ACR_DCEN | FLASH_ACR_LATENCY_3WS;
+      RCC->CFGR &= (uint32_t)((uint32_t)~(RCC_CFGR_SW));
+      RCC->CFGR |= RCC_CFGR_SW_PLL;
+      while ((RCC->CFGR & (uint32_t)RCC_CFGR_SWS) != RCC_CFGR_SWS_PLL);
+    }
+  }
 #else /* HSI will be used as PLL clock source */
   /* Select regulator voltage output Scale 1 mode */
   RCC->APB1ENR |= RCC_APB1ENR_PWREN;
   PWR->CR |= PWR_CR_VOS;
-  
+
   /* HCLK = SYSCLK / 1*/
   RCC->CFGR |= RCC_CFGR_HPRE_DIV1;
-  
+
   /* PCLK2 = HCLK / 2*/
   RCC->CFGR |= RCC_CFGR_PPRE2_DIV1;
-  
+
   /* PCLK1 = HCLK / 4*/
   RCC->CFGR |= RCC_CFGR_PPRE1_DIV2;
-  
+
   /* Configure the main PLL */
-  RCC->PLLCFGR = PLL_M | (PLL_N << 6) | (((PLL_P >> 1) -1) << 16) | (PLL_Q << 24); 
-  
+  RCC->PLLCFGR = PLL_M | (PLL_N << 6) | (((PLL_P >> 1) -1) << 16) | (PLL_Q << 24);
+
   /* Enable the main PLL */
   RCC->CR |= RCC_CR_PLLON;
-  
+
   /* Wait till the main PLL is ready */
   while((RCC->CR & RCC_CR_PLLRDY) == 0)
   {
   }
-  
+
   /* Configure Flash prefetch, Instruction cache, Data cache and wait state */
   FLASH->ACR = FLASH_ACR_PRFTEN | FLASH_ACR_ICEN |FLASH_ACR_DCEN |FLASH_ACR_LATENCY_3WS;
-  
+
   /* Select the main PLL as system clock source */
   RCC->CFGR &= (uint32_t)((uint32_t)~(RCC_CFGR_SW));
   RCC->CFGR |= RCC_CFGR_SW_PLL;
-  
+
   /* Wait till the main PLL is used as system clock source */
   while ((RCC->CFGR & (uint32_t)RCC_CFGR_SWS ) != RCC_CFGR_SWS_PLL);
   {
   }
-#endif /* USE_HSE_BYPASS */  
+#endif /* USE_HSE_BYPASS || USE_HSE */  
 #endif /* STM32F40_41xxx || STM32F427_437xx || STM32F429_439xx || STM32F401xx || STM32F469_479xx */  
 }
 #if defined (DATA_IN_ExtSRAM) && defined (DATA_IN_ExtSDRAM)
