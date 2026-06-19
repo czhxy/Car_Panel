@@ -14,7 +14,8 @@
   </project>
 
   <project>
-    <PathAndName>.\bootloader.uvprojx</PathAndName>
+    <PathAndName>.\boot.uvprojx</PathAndName>
+    <NodeIsExpanded>1</NodeIsExpanded>
   </project>
 
 </ProjectWorkspace>

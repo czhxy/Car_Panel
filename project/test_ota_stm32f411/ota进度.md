@@ -118,7 +118,7 @@ pip install pyserial
 python tools\ymodem_send.py <COM端口> <BIN文件路径>
 
 # 示例
-python tools\ymodem_send.py COM4 mdk\app.bin
+python tools\ymodem_send.py COM7 mdk\app.bin
 ```
 
 ### 完整操作步骤

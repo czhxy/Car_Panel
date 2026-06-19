@@ -1,0 +1,15 @@
+; *************************************************************
+; *** Scatter-Loading Description File — Bootloader ***
+; *** STM32F429IGTx Bootloader 64KB                       ***
+; *************************************************************
+
+LR_IROM1 0x08000000 0x00010000  {    ; 加载区：Bootloader 64KB
+  ER_IROM1 0x08000000 0x00010000  {  ; 执行区
+   *.o (RESET, +First)
+   startup_*.o (+RO)
+   .ANY (+RO)
+  }
+  RW_IRAM1 0x20000000 0x00030000  {  ; 192KB SRAM
+   .ANY (+RW +ZI)
+  }
+}
