@@ -142,11 +142,10 @@ void DebugMon_Handler(void)
 /******************************************************************************/
 
 /**
-  * @brief  USART1 IDLE 中断（DMA Circular 模式 + lwrb）：
-  *         DMA 自动循环搬运字节到 lwrb 底层存储，IDLE 触发时根据 NDTR 变化
-  *         计算帧长度并提交给 lwrb，再通过信号量唤醒接收任务。
-  *         Circular 模式无需重启 DMA。
+  * @brief  USART1 IDLE 中断（DMA Circular 模式 + lwrb）
+  * LCD 验证阶段暂时禁用，恢复 FreeRTOS 后取消注释。
   */
+#if 0
 void USART1_IRQHandler(void)
 {
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
@@ -174,6 +173,7 @@ void USART1_IRQHandler(void)
 
     portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
+#endif
 
 /**
   * @}

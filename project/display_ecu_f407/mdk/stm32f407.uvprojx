@@ -407,6 +407,41 @@
           </Files>
         </Group>
         <Group>
+          <GroupName>bsp</GroupName>
+          <Files>
+            <File>
+              <FileName>bsp_key.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\bsp\bsp_key.c</FilePath>
+            </File>
+            <File>
+              <FileName>bsp_key.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\bsp\bsp_key.h</FilePath>
+            </File>
+            <File>
+              <FileName>bsp_led.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\bsp\bsp_led.c</FilePath>
+            </File>
+            <File>
+              <FileName>bsp_led.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\bsp\bsp_led.h</FilePath>
+            </File>
+            <File>
+              <FileName>bsp_usart.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\bsp\bsp_usart.c</FilePath>
+            </File>
+            <File>
+              <FileName>bsp_usart.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\bsp\bsp_usart.h</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
           <GroupName>app</GroupName>
           <Files>
             <File>
@@ -440,34 +475,14 @@
               <FilePath>..\driver\Delay.h</FilePath>
             </File>
             <File>
-              <FileName>bsp_key.c</FileName>
+              <FileName>lcd.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\bsp\bsp_key.c</FilePath>
+              <FilePath>..\driver\lcd.c</FilePath>
             </File>
             <File>
-              <FileName>bsp_key.h</FileName>
+              <FileName>lcd.h</FileName>
               <FileType>5</FileType>
-              <FilePath>..\bsp\bsp_key.h</FilePath>
-            </File>
-            <File>
-              <FileName>bsp_led.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\bsp\bsp_led.c</FilePath>
-            </File>
-            <File>
-              <FileName>bsp_led.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>..\bsp\bsp_led.h</FilePath>
-            </File>
-            <File>
-              <FileName>bsp_usart.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\bsp\bsp_usart.c</FilePath>
-            </File>
-            <File>
-              <FileName>bsp_usart.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>..\bsp\bsp_usart.h</FilePath>
+              <FilePath>..\driver\lcd.h</FilePath>
             </File>
           </Files>
         </Group>
@@ -770,5 +785,14 @@
     <components/>
     <files/>
   </RTE>
+
+  <LayerInfo>
+    <Layers>
+      <Layer>
+        <LayName>stm32f407</LayName>
+        <LayPrjMark>1</LayPrjMark>
+      </Layer>
+    </Layers>
+  </LayerInfo>
 
 </Project>
