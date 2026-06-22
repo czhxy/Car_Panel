@@ -9,7 +9,9 @@
 #define __MAIN_H
 
 #include "stm32f4xx.h"
-
-void LED_Init(void);
+#include "FreeRTOS.h"
+#include "task.h"
+#include "usart.h"
+#include "bsp_log.h"
 
 #endif /* __MAIN_H */

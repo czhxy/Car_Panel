@@ -180,15 +180,14 @@ int ymodem_receive(uint32_t target_addr, uint32_t max_size,
                 int len = ymodem_recv_packet_body(hdr, rx_buf, &seq);
                 if (len > 0 && seq == 0) {
                     if (parse_filename_packet(rx_buf, status) == 0) {
-                        printf("[YMODEM] File: %s, Size: %u\r\n",
-                               status->file_name,
-                               (unsigned int)status->file_size);
-
                         if (status->file_size > max_size) {
                             printf("[YMODEM] ERROR: File too large!\r\n");
                             return YMODEM_ERR_FILESIZE;
                         }
                         uart_putc(ACK);
+                        printf("[YMODEM] File: %s, Size: %u\r\n",
+                               status->file_name,
+                               (unsigned int)status->file_size);
                         got_filename = 1;
                         break;
                     }
@@ -210,9 +209,9 @@ int ymodem_receive(uint32_t target_addr, uint32_t max_size,
         flash_if_lock();
         return YMODEM_ERR_FLASH;
     }
+    uart_putc(C_CHAR);
     printf("[YMODEM] Erase OK, requesting data...\r\n");
 
-    uart_putc(C_CHAR);
     expected_seq = 1;
 
     // ===== Step 3: 接收数据包 =====

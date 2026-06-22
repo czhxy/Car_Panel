@@ -8,14 +8,12 @@
   <WorkspaceName>workspace</WorkspaceName>
 
   <project>
-    <PathAndName>.\app.uvprojx</PathAndName>
+    <PathAndName>..\mdk\app.uvprojx</PathAndName>
     <NodeIsActive>1</NodeIsActive>
-    <NodeIsExpanded>1</NodeIsExpanded>
   </project>
 
   <project>
-    <PathAndName>.\boot.uvprojx</PathAndName>
-    <NodeIsExpanded>1</NodeIsExpanded>
+    <PathAndName>..\mdk\boot.uvprojx</PathAndName>
   </project>
 
 </ProjectWorkspace>
