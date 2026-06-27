@@ -340,7 +340,7 @@
               <MiscControls></MiscControls>
               <Define>STM32F429_439xx,USE_STDPERIPH_DRIVER</Define>
               <Undefine></Undefine>
-              <IncludePath>..\app;..\driver;..\firmware\cmsis\core;..\firmware\cmsis\device;..\firmware\driver\inc;..\components;..\third_lib\FreeRTOS;..\third_lib\FreeRTOS\inc;..\task</IncludePath>
+              <IncludePath>..\app;..\driver;..\firmware\cmsis\core;..\firmware\cmsis\device;..\firmware\driver\inc;..\components;..\third_lib\FreeRTOS;..\third_lib\FreeRTOS\inc;..\task;..\protocol</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -388,6 +388,11 @@
               <FileName>startup_stm32f429_439xx.s</FileName>
               <FileType>2</FileType>
               <FilePath>..\firmware\cmsis\device\startup_stm32f429_439xx.s</FilePath>
+            </File>
+            <File>
+              <FileName>stm32f4xx_it_asm.s</FileName>
+              <FileType>2</FileType>
+              <FilePath>..\firmware\cmsis\device\stm32f4xx_it_asm.s</FilePath>
             </File>
             <File>
               <FileName>stm32f4xx.h</FileName>
@@ -522,6 +527,16 @@
           </Files>
         </Group>
         <Group>
+          <GroupName>protocol</GroupName>
+          <Files>
+            <File>
+              <FileName>CAN_Protocol.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\protocol\CAN_Protocol.h</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
           <GroupName>components</GroupName>
           <Files>
             <File>
@@ -598,23 +613,6 @@
         </Group>
         <Group>
           <GroupName>firmware/cmsis</GroupName>
-          <Files>
-            <File>
-              <FileName>startup_stm32f429_439xx.s</FileName>
-              <FileType>2</FileType>
-              <FilePath>..\firmware\cmsis\device\startup_stm32f429_439xx.s</FilePath>
-            </File>
-            <File>
-              <FileName>system_stm32f4xx.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\firmware\cmsis\device\system_stm32f4xx.c</FilePath>
-            </File>
-            <File>
-              <FileName>stm32f4xx_it.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\firmware\cmsis\device\stm32f4xx_it.c</FilePath>
-            </File>
-          </Files>
         </Group>
         <Group>
           <GroupName>firmware/driver</GroupName>

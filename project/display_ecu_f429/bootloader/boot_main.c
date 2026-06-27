@@ -4,7 +4,7 @@
   * @brief   Bootloader 入口 — 仅含 main() 主流程 (STM32F429)
   ******************************************************************************
   */
-//python tools\ymodem_send.py COM7 mdk\app.bin
+//python tools\ymodem_send.py COM15 mdk\app.bin
 #include "stm32f4xx.h"
 #include "boot_config.h"
 #include "boot_decision.h"

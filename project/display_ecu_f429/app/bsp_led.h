@@ -5,10 +5,6 @@
 
 void BSP_LED_Init(void);
 
-/* LED 任务函数声明，供 main.c 中 xTaskCreate 引用 */
-void LEDTask1(void * pvParameters);
-void LEDTask2(void * pvParameters);
-void LEDTask3(void * pvParameters);
 #define LED1_Port GPIOH
 #define LED1_Pin GPIO_Pin_12
 

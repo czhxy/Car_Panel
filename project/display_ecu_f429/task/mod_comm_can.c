@@ -2,6 +2,7 @@
 #include "bsp_can.h"
 #include "bsp_key.h"
 #include "bsp_log.h"
+#include "semphr.h"
 #include <string.h>
 #include "task.h"
 
@@ -18,6 +19,9 @@
 /* ---- 静态变量 ---- */
 static QueueHandle_t CanTxQueue = NULL;
 static QueueHandle_t CanRxQueue = NULL;
+
+/* ---- ISR 诊断计数器：每次进入 RX ISR 处理一帧则递增 ---- */
+
 
 static struct {
     uint8_t tx_err_count;
@@ -68,6 +72,7 @@ void Mod_Can_RxIRQHandler(void)
         if (CanRxQueue != NULL) {
             xQueueSendFromISR(CanRxQueue, &rx_msg, &xHigherPriorityTaskWoken);
         }
+        
     }
 
     portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
@@ -82,7 +87,7 @@ void ModCommCan_PrintRxFrame(const CanRxMsg *rx_msg)
 
     if (rx_msg->IDE == CAN_ID_EXT) {
         uint32_t id = rx_msg->ExtId;
-        LOG_D("[RX] ExtID=0x%08X src=%d dst=%d type=%d mode=0x%03X func=%d DLC=%d data:",
+        LOG_I("[RX] ExtID=0x%08X src=%d dst=%d type=%d mode=0x%03X func=%d DLC=%d data:",
                    id,
                    CAN_ID_GET_SRC(id),
                    CAN_ID_GET_DST(id),
@@ -91,13 +96,12 @@ void ModCommCan_PrintRxFrame(const CanRxMsg *rx_msg)
                    CAN_ID_GET_FUNC(id),
                    rx_msg->DLC);
     } else {
-        LOG_D("[RX] StdID=0x%03X DLC=%d data:", rx_msg->StdId, rx_msg->DLC);
+        LOG_I("[RX] StdID=0x%03X DLC=%d data:", rx_msg->StdId, rx_msg->DLC);
     }
 
     for (i = 0; i < rx_msg->DLC; i++) {
-        LOG_D(" %02X", rx_msg->Data[i]);
-    }
-    LOG_D("\r\n");
+        LOG_I(" %02X", rx_msg->Data[i]);
+    }	
 }
 
 /* ============================================================
@@ -118,11 +122,6 @@ void Mod_Can_TxTask(void *pvParameters)
     CanTxMsg tx_pack;
 
     (void)pvParameters;
-
-    /* 硬件初始化（必须在调度器启动后执行，因为包含 vTaskDelay）
-     * 队列已由 task_entry 提前创建 */
-    BSP_CAN_Init();
-    vTaskDelay(pdMS_TO_TICKS(100));
 
     while (1) {
         if (xQueueReceive(CanTxQueue, &tx_pack, portMAX_DELAY) == pdPASS) {
@@ -181,31 +180,38 @@ void Mod_Can_TxTest(void)
     tx_msg.Data[6] = seq++;
     tx_msg.Data[7] = seq++;
 
+    uint32_t id = tx_msg.ExtId;
+    LOG_I("[TX] ExtID=0x%08X src=%d dst=%d type=%d mode=0x%03X func=%d DLC=%d data:",
+               id,
+               CAN_ID_GET_SRC(id),
+               CAN_ID_GET_DST(id),
+               CAN_ID_GET_FTYPE(id),
+               CAN_ID_GET_MODE(id),
+               CAN_ID_GET_FUNC(id),
+               tx_msg.DLC);
+    uint8_t i;
+    for (i = 0; i < tx_msg.DLC; i++) {
+        LOG_I(" %02X", tx_msg.Data[i]);
+    }
+    
+
     Mod_Can_TxEvent(tx_msg);
 }
 
 /* ============================================================
  * CAN_Test_Task — 测试任务
- * 独立轮询 KEY1，不消费其他任务的信号量
  * 按下 KEY1 后发送一帧测试报文
  * ============================================================ */
 void CAN_Test_Task(void *pvParameters)
 {
-    uint8_t debounce = 0;
     (void)pvParameters;
 
     while (1) {
-        if (GPIO_ReadInputDataBit(KEY1_Port, KEY1_Pin) == Bit_RESET) {
-            if (debounce == 0) {
-                vTaskDelay(pdMS_TO_TICKS(20));
-                if (GPIO_ReadInputDataBit(KEY1_Port, KEY1_Pin) == Bit_RESET) {
-                    debounce = 1;
-                    Mod_Can_TxTest();
-                }
-            }
-        } else {
-            debounce = 0;
-        }
+        if(xSemaphoreTake(xBinarySemKey1,100)== pdTRUE)
+				{
+					
+					Mod_Can_TxTest();
+				}
         vTaskDelay(pdMS_TO_TICKS(50));
     }
 }

@@ -1,15 +1,6 @@
 #include "bsp_key.h"
-#include "stm32f4xx.h"
-#include "FreeRTOS.h"
-#include "task.h"
-#include "semphr.h"
-
-static SemaphoreHandle_t KEY1_Binary = NULL;
-static SemaphoreHandle_t KEY2_Binary = NULL;
-
-/* 按键消抖状态位，0=未触发，1=已触发（防重复） */
-static uint8_t key1_debounce = 0;
-static uint8_t key2_debounce = 0;
+SemaphoreHandle_t xBinarySemKey1 = NULL;
+SemaphoreHandle_t xBinarySemKey2 = NULL;
 
 void BSP_KEY_Init(void)
 {
@@ -26,72 +17,53 @@ void BSP_KEY_Init(void)
 
 	GPIO_InitStructure.GPIO_Pin = KEY2_Pin;
 	GPIO_Init(KEY2_Port, &GPIO_InitStructure);
-
-	KEY1_Binary = xSemaphoreCreateBinary();
-	KEY2_Binary = xSemaphoreCreateBinary();
+	
+	if((xBinarySemKey1 = xSemaphoreCreateBinary()) == NULL)
+	{
+		LOG_E("[Key] Key1 create failed!\r\n");
+	}
+	if((xBinarySemKey2 = xSemaphoreCreateBinary()) == NULL)
+	{
+		LOG_E("[Key] Key2 create failed!\r\n");
+	}
 }
 
 /**
- * @brief  按键扫描任务，每 10ms 检测一次
- * @note   按下瞬间即给信号量，消抖机制避免重复触发
+ * @brief  按键扫描任务
  */
 void KEYTask(void * pvParameters)
 {
 	(void)pvParameters;
-
+	uint8_t debounce1 = 0;
+	uint8_t debounce2 = 0;
+	
 	while (1)
-	{
-		/* KEY1 检测：按下触发，释放复位 */
-		if (GPIO_ReadInputDataBit(KEY1_Port, KEY1_Pin) == Bit_RESET)
-		{
-			if (key1_debounce == 0)
-			{
-				vTaskDelay(pdMS_TO_TICKS(20));
-				if (GPIO_ReadInputDataBit(KEY1_Port, KEY1_Pin) == Bit_RESET)
-				{
-					key1_debounce = 1;
-					xSemaphoreGive(KEY1_Binary);
-				}
-			}
-		}
-		else
-		{
-			key1_debounce = 0;  /* 释放后清零，允许下次触发 */
-		}
+	{	
+		if (GPIO_ReadInputDataBit(KEY1_Port, KEY1_Pin) == Bit_RESET) {
+            if (debounce1 == 0) {
+                vTaskDelay(pdMS_TO_TICKS(20));
+                if (GPIO_ReadInputDataBit(KEY1_Port, KEY1_Pin) == Bit_RESET) {
+                    debounce1 = 1;
+                    xSemaphoreGive(xBinarySemKey1);
+                }
+            }
+        } else {
+            debounce1 = 0;
+        }
+        
+		/* KEY2 检测：按下时打印状态 */
+		if (GPIO_ReadInputDataBit(KEY2_Port, KEY2_Pin) == Bit_RESET) {
+            if (debounce2 == 0) {
+                vTaskDelay(pdMS_TO_TICKS(20));
+                if (GPIO_ReadInputDataBit(KEY2_Port, KEY2_Pin) == Bit_RESET) {
+                    debounce2 = 1;
+                    xSemaphoreGive(xBinarySemKey2);
+                }
+            }
+        } else {
+            debounce2 = 0;
+        }
 
-		/* KEY2 检测：按下触发，释放复位 */
-		if (GPIO_ReadInputDataBit(KEY2_Port, KEY2_Pin) == Bit_RESET)
-		{
-			if (key2_debounce == 0)
-			{
-				vTaskDelay(pdMS_TO_TICKS(20));
-				if (GPIO_ReadInputDataBit(KEY2_Port, KEY2_Pin) == Bit_RESET)
-				{
-					key2_debounce = 1;
-					xSemaphoreGive(KEY2_Binary);
-				}
-			}
-		}
-		else
-		{
-			key2_debounce = 0;  /* 释放后清零，允许下次触发 */
-		}
-
-		vTaskDelay(pdMS_TO_TICKS(10));  /* 扫描周期 */
+		vTaskDelay(pdMS_TO_TICKS(50));
 	}
-}
-
-uint8_t BSP_Key_GetState(uint8_t id)
-{
-	if (id == 1)
-	{
-		if (xSemaphoreTake(KEY1_Binary, 0) == pdTRUE)
-			return 1;
-	}
-	if (id == 2)
-	{
-		if (xSemaphoreTake(KEY2_Binary, 0) == pdTRUE)
-			return 1;
-	}
-	return 0;
 }

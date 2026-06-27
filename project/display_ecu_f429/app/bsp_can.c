@@ -60,4 +60,9 @@ void BSP_CAN_Init(void)
 
     /* 使能 FIFO0 消息挂起中断（滤波器全部分配给 FIFO0，FIFO1 不使用） */
     CAN_ITConfig(CAN1, CAN_IT_FMP0, ENABLE);
+
+    LOG_I("[CAN] Init OK  MSR=0x%04X ESR=0x%08X RF0R=0x%08X\r\n",
+          (unsigned int)CAN1->MSR,
+          (unsigned int)CAN1->ESR,
+          (unsigned int)CAN1->RF0R);
 }

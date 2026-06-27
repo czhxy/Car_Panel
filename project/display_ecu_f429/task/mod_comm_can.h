@@ -85,6 +85,9 @@ typedef enum {
 /* ---- 队列深度 ---- */
 #define CAN_QUEUE_LENGTH 64
 
+/* ---- 诊断计数器：CAN RX 帧数，在 ISR 中递增 ---- */
+extern volatile uint32_t can_rx_isr_cnt;
+
 /* ---- API 声明 ---- */
 void Mod_Can_Init(void);
 bool Mod_Can_TxEvent(CanTxMsg tx_message);

@@ -4,6 +4,7 @@
 #include "bsp_log.h"
 #include "bsp_key.h"
 #include "bsp_led.h"
+#include "bsp_can.h"
 #include "mod_comm_can.h"
 
 void Task_Entry_All(void * pvParameters);
@@ -20,13 +21,15 @@ void Heartbeat_Task(void * pvParameters)
 
     while (1)
     {
-        tick++;
-        GPIO_ToggleBits(LED1_Port, LED1_Pin);
-
-        if (tick % 2 == 0)
-        {
-            printf("[HEARTBEAT] tick=%lu\r\n", tick);
-        }
+			tick++;
+			GPIO_ToggleBits(LED1_Port, LED1_Pin);
+			GPIO_ToggleBits(LED2_Port, LED2_Pin);
+			GPIO_ToggleBits(LED3_Port, LED3_Pin);
+			GPIO_ToggleBits(LED4_Port, LED4_Pin);
+			if (tick % 2 == 0)
+			{
+					LOG_I("[HEARTBEAT] tick=%u\r\n", tick/2);
+			}
 
         vTaskDelay(pdMS_TO_TICKS(500));
     }
@@ -42,7 +45,7 @@ void Task_Entry_All(void * pvParameters)
 
     BSP_LED_Init();
     BSP_KEY_Init();
-
+		BSP_CAN_Init();
     /* 提前创建 CAN 队列，避免 RX 任务在队列就绪前启动 */
     Mod_Can_Init();
 
@@ -50,15 +53,15 @@ void Task_Entry_All(void * pvParameters)
      * CAN_TX/RX: 512 字 = 2KB（队列收发 + 硬件调用）
      * CAN_TEST/KEY_SCAN: 256 字 = 1KB（简单轮询）
      * HEARTBEAT: 512 字 = 2KB（printf/vsprintf 栈开销大） */
-    if (xTaskCreate(Mod_Can_TxTask, "CAN_TX", 512, NULL, 2, NULL) != pdPASS)
+    if (xTaskCreate(Mod_Can_TxTask, "CAN_TX", 512, NULL, 3, NULL) != pdPASS)
         LOG_E("[Main] CAN_TX task create failed!\r\n");
-    if (xTaskCreate(Mod_Can_RxTask, "CAN_RX", 512, NULL, 2, NULL) != pdPASS)
+    if (xTaskCreate(Mod_Can_RxTask, "CAN_RX", 512, NULL, 3, NULL) != pdPASS)
         LOG_E("[Main] CAN_RX task create failed!\r\n");
-    if (xTaskCreate(CAN_Test_Task,  "CAN_TEST", 256, NULL, 2, NULL) != pdPASS)
+    if (xTaskCreate(CAN_Test_Task,  "CAN_TEST", 256, NULL, 3, NULL) != pdPASS)
         LOG_E("[Main] CAN_TEST task create failed!\r\n");
     if (xTaskCreate(KEYTask, "KEY_SCAN", 256, NULL, 2, NULL) != pdPASS)
         LOG_E("[Main] KEY_SCAN task create failed!\r\n");
-    if (xTaskCreate(Heartbeat_Task, "HEARTBEAT", 512, NULL, 2, NULL) != pdPASS)
+    if (xTaskCreate(Heartbeat_Task, "HEARTBEAT", 512, NULL, 1, NULL) != pdPASS)
         LOG_E("[Main] HEARTBEAT task create failed!\r\n");
 
     vTaskDelete(NULL);
