@@ -8,7 +8,7 @@
 #include "bsp_log.h"
 void BSP_KEY_Init(void);
 /* 按键任务函数声明，供 main.c 中 xTaskCreate 引用 */
-void KEYTask(void *pvParameters);
+void prvKeyScanTask(void *pvParameters);
 //项目暂时只用到K1 K2
 //K1 K2按下接地
 #define KEY1_Port GPIOE
@@ -24,6 +24,6 @@ void KEYTask(void *pvParameters);
 #define KEY4_Port GPIOC
 #define KEY4_Pin GPIO_Pin_13
 
-extern SemaphoreHandle_t xBinarySemKey1;
-extern SemaphoreHandle_t xBinarySemKey2;
+extern SemaphoreHandle_t xKey1Sem;
+extern SemaphoreHandle_t xKey2Sem;
 #endif

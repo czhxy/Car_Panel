@@ -13,7 +13,6 @@ void BSP_LED_Init(void)
 	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_OUT;
 	GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
 	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_100MHz;
-	GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_UP;
 	GPIO_Init(LED1_Port, &GPIO_InitStructure);
 
 	GPIO_InitStructure.GPIO_Pin = LED2_Pin;
@@ -24,5 +23,10 @@ void BSP_LED_Init(void)
 
 	GPIO_InitStructure.GPIO_Pin = LED4_Pin;
 	GPIO_Init(LED4_Port, &GPIO_InitStructure);
+	
+	GPIO_SetBits(LED1_Port,LED1_Pin);
+	GPIO_SetBits(LED2_Port,LED2_Pin);
+	GPIO_SetBits(LED3_Port,LED3_Pin);
+	GPIO_SetBits(LED4_Port,LED4_Pin);
 }
 

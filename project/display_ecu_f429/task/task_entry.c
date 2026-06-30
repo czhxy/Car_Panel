@@ -24,14 +24,13 @@ void Heartbeat_Task(void * pvParameters)
     {
 			tick++;
 			GPIO_ToggleBits(LED1_Port, LED1_Pin);
-			GPIO_ToggleBits(LED2_Port, LED2_Pin);
-			GPIO_ToggleBits(LED3_Port, LED3_Pin);
-			GPIO_ToggleBits(LED4_Port, LED4_Pin);
+
 			if (tick % 2 == 0)
 			{
 					LOG_I("[HEARTBEAT] tick=%u\r\n", tick/2);
+					Can_Heartbeat();
 			}
-
+			
         vTaskDelay(pdMS_TO_TICKS(500));
     }
 }
@@ -60,7 +59,7 @@ void Task_Entry_All(void * pvParameters)
         LOG_E("[Main] CAN_RX task create failed!\r\n");
     if (xTaskCreate(CAN_Test_Task,  "CAN_TEST", 256, NULL, 3, NULL) != pdPASS)
         LOG_E("[Main] CAN_TEST task create failed!\r\n");
-    if (xTaskCreate(KEYTask, "KEY_SCAN", 256, NULL, 2, NULL) != pdPASS)
+    if (xTaskCreate(prvKeyScanTask, "KEY_SCAN", 256, NULL, 2, NULL) != pdPASS)
         LOG_E("[Main] KEY_SCAN task create failed!\r\n");
     if (xTaskCreate(Heartbeat_Task, "HEARTBEAT", 512, NULL, 1, NULL) != pdPASS)
         LOG_E("[Main] HEARTBEAT task create failed!\r\n");
