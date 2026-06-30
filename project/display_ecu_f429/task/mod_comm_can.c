@@ -20,9 +20,6 @@
 static QueueHandle_t CanTxQueue = NULL;
 static QueueHandle_t CanRxQueue = NULL;
 
-/* ---- ISR 诊断计数器：每次进入 RX ISR 处理一帧则递增 ---- */
-
-
 static struct {
     uint8_t tx_err_count;
     uint8_t rx_err_count;
@@ -31,7 +28,6 @@ static struct {
 /* ---- 统计变量（非静态，供外部只读访问） ---- */
 const uint8_t *ModCan_TxErrCount  = &event_err_count.tx_err_count;
 const uint8_t *ModCan_RxErrCount  = &event_err_count.rx_err_count;
-const uint8_t *ModCan_RxErrCount_ = &event_err_count.rx_err_count;
 
 /* ============================================================
  * Mod_Can_Init — 创建 TX/RX FreeRTOS 队列
@@ -129,7 +125,7 @@ void Mod_Can_TxTask(void *pvParameters)
             if (mbox == CAN_TxStatus_NoMailBox) {
                 /* 邮箱满，回灌队首并让出 CPU */
                 xQueueSendToFront(CanTxQueue, &tx_pack, 0);
-                vTaskDelay(pdMS_TO_TICKS(1));
+                vTaskDelay(pdMS_TO_TICKS(10));
             }
         }
     }
@@ -197,7 +193,29 @@ void Mod_Can_TxTest(void)
 
     Mod_Can_TxEvent(tx_msg);
 }
+void Can_Heartbeat(void)
+{
+    static uint32_t sHeartbeatCnt = 0;
+    CanTxMsg tx_msg;
 
+    memset(&tx_msg, 0, sizeof(tx_msg));
+    tx_msg.ExtId  = CAN_HEARTBEAT_ID;
+    tx_msg.IDE    = CAN_ID_EXT;
+    tx_msg.RTR    = CAN_RTR_DATA;
+    tx_msg.DLC    = 8;
+
+    sHeartbeatCnt++;
+    tx_msg.Data[0] = (uint8_t)(sHeartbeatCnt);
+    tx_msg.Data[1] = (uint8_t)(sHeartbeatCnt >> 8);
+    tx_msg.Data[2] = (uint8_t)(sHeartbeatCnt >> 16);
+    tx_msg.Data[3] = (uint8_t)(sHeartbeatCnt >> 24);
+    tx_msg.Data[4] = 0x00;   /* 设备状态: 0=正常 */
+    tx_msg.Data[5] = 0x00;   /* 预留 */
+    tx_msg.Data[6] = 0x00;   /* 预留 */
+    tx_msg.Data[7] = 0x00;   /* 预留 */
+
+    Mod_Can_TxEvent(tx_msg);
+}
 /* ============================================================
  * CAN_Test_Task — 测试任务
  * 按下 KEY1 后发送一帧测试报文
@@ -207,7 +225,7 @@ void CAN_Test_Task(void *pvParameters)
     (void)pvParameters;
 
     while (1) {
-        if(xSemaphoreTake(xBinarySemKey1,100)== pdTRUE)
+        if(xSemaphoreTake(xKey1Sem, pdMS_TO_TICKS(100)) == pdTRUE)
 				{
 					
 					Mod_Can_TxTest();

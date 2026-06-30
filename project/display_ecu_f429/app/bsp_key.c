@@ -1,7 +1,10 @@
 #include "bsp_key.h"
-SemaphoreHandle_t xBinarySemKey1 = NULL;
-SemaphoreHandle_t xBinarySemKey2 = NULL;
-
+SemaphoreHandle_t xKey1Sem = NULL;
+SemaphoreHandle_t xKey2Sem = NULL;
+static uint8_t sPrevKey1State = 1;
+static uint8_t sPrevKey2State = 1;
+static uint8_t sCurrKey1State = 1;
+static uint8_t sCurrKey2State = 1;
 void BSP_KEY_Init(void)
 {
 	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOE, ENABLE);
@@ -18,11 +21,11 @@ void BSP_KEY_Init(void)
 	GPIO_InitStructure.GPIO_Pin = KEY2_Pin;
 	GPIO_Init(KEY2_Port, &GPIO_InitStructure);
 	
-	if((xBinarySemKey1 = xSemaphoreCreateBinary()) == NULL)
+	if((xKey1Sem = xSemaphoreCreateBinary()) == NULL)
 	{
 		LOG_E("[Key] Key1 create failed!\r\n");
 	}
-	if((xBinarySemKey2 = xSemaphoreCreateBinary()) == NULL)
+	if((xKey2Sem = xSemaphoreCreateBinary()) == NULL)
 	{
 		LOG_E("[Key] Key2 create failed!\r\n");
 	}
@@ -31,39 +34,21 @@ void BSP_KEY_Init(void)
 /**
  * @brief  按键扫描任务
  */
-void KEYTask(void * pvParameters)
+void prvKeyScanTask(void * pvParameters)
 {
 	(void)pvParameters;
-	uint8_t debounce1 = 0;
-	uint8_t debounce2 = 0;
-	
 	while (1)
-	{	
-		if (GPIO_ReadInputDataBit(KEY1_Port, KEY1_Pin) == Bit_RESET) {
-            if (debounce1 == 0) {
-                vTaskDelay(pdMS_TO_TICKS(20));
-                if (GPIO_ReadInputDataBit(KEY1_Port, KEY1_Pin) == Bit_RESET) {
-                    debounce1 = 1;
-                    xSemaphoreGive(xBinarySemKey1);
-                }
-            }
-        } else {
-            debounce1 = 0;
-        }
-        
-		/* KEY2 检测：按下时打印状态 */
-		if (GPIO_ReadInputDataBit(KEY2_Port, KEY2_Pin) == Bit_RESET) {
-            if (debounce2 == 0) {
-                vTaskDelay(pdMS_TO_TICKS(20));
-                if (GPIO_ReadInputDataBit(KEY2_Port, KEY2_Pin) == Bit_RESET) {
-                    debounce2 = 1;
-                    xSemaphoreGive(xBinarySemKey2);
-                }
-            }
-        } else {
-            debounce2 = 0;
-        }
-
-		vTaskDelay(pdMS_TO_TICKS(50));
+	{
+		sCurrKey1State = GPIO_ReadInputDataBit(KEY1_Port, KEY1_Pin);
+		sCurrKey2State = GPIO_ReadInputDataBit(KEY2_Port, KEY2_Pin);
+		if (sCurrKey1State == Bit_SET && sPrevKey1State == Bit_RESET) {
+				xSemaphoreGive(xKey1Sem);
+		}
+		if (sCurrKey2State == Bit_SET && sPrevKey2State == Bit_RESET) {
+				xSemaphoreGive(xKey2Sem);
+		}
+		sPrevKey1State = sCurrKey1State;
+		sPrevKey2State = sCurrKey2State;
+		vTaskDelay(pdMS_TO_TICKS(20));
 	}
 }

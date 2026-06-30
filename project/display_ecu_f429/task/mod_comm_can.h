@@ -79,8 +79,9 @@ typedef enum {
     CAN_FTYPE_RESERVED = 3
 } CAN_FrameType;
 
-/* ---- 发送帧默认 ID ---- */
-#define CAN_TX_ID  CAN_ID_BUILD(CAN_PRIO_ALERT, CAN_SELF_ADDR, CAN_DEVICE_ID_BROADCAST, CAN_FTYPE_NORMAL, 0x001, 0x01)
+/* ---- 发送帧 ID ---- */
+#define CAN_TX_ID         CAN_ID_BUILD(CAN_PRIO_ALERT,     CAN_SELF_ADDR, CAN_DEVICE_ID_BROADCAST, CAN_FTYPE_NORMAL, 0x001, 0x01)
+#define CAN_HEARTBEAT_ID  CAN_ID_BUILD(CAN_PRIO_HEARTBEAT, CAN_SELF_ADDR, CAN_DEVICE_ID_BROADCAST, CAN_FTYPE_NORMAL, 0x000, 0x01)
 
 /* ---- 队列深度 ---- */
 #define CAN_QUEUE_LENGTH 64
@@ -96,7 +97,7 @@ void Mod_Can_TxTask(void *pvParameters);
 void Mod_Can_RxTask(void *pvParameters);
 void CAN_Test_Task(void *pvParameters);
 void Mod_Can_TxTest(void);
-
+void Can_Heartbeat(void);
 /* 弱符号回调：应用层可重写 */
 void ModCommCan_OnRxFrame(const CanRxMsg *rx_msg);
 void ModCommCan_PrintRxFrame(const CanRxMsg *rx_msg);
