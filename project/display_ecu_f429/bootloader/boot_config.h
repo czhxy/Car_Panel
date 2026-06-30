@@ -43,4 +43,8 @@
 
 #define OTA_MAGIC               0x4F544152  // "RATO"
 
+// ======================== 软件版本 ========================
+// 与 app/main.h 中的 APP_VERSION 保持一致
+#define APP_SOFTWARE_VERSION    1.0         // 应用软件版本号
+
 #endif /* __BOOT_CONFIG_H */

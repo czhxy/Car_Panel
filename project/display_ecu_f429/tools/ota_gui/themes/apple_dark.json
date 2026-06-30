@@ -1,0 +1,55 @@
+{
+    "_name": "Apple 深色",
+    "_description": "iOS 风格深色玻璃质感主题",
+
+    "bg": "#1C1C1E",
+    "fg": "#FFFFFF",
+    "fg_secondary": "rgba(235, 235, 245, 0.6)",
+    "fg_tertiary": "rgba(235, 235, 245, 0.3)",
+
+    "card_bg": "#2C2C2E",
+    "card_border": "rgba(255, 255, 255, 0.08)",
+
+    "success": "#30D158",
+    "error": "#FF453A",
+    "warning": "#FF9F0A",
+    "info": "#64D2FF",
+    "accent": "#0A84FF",
+
+    "button_primary_bg": "#0A84FF",
+    "button_primary_fg": "#FFFFFF",
+    "button_primary_hover": "#409CFF",
+    "button_primary_pressed": "#006ACC",
+
+    "button_danger_bg": "#A52822",
+    "button_danger_fg": "#FFFFFF",
+    "button_danger_hover": "#8F1E19",
+
+    "button_secondary_bg": "rgba(255, 255, 255, 0.1)",
+    "button_secondary_fg": "#FFFFFF",
+    "button_secondary_hover": "rgba(255, 255, 255, 0.18)",
+
+    "progress_trough": "#3A3A3C",
+    "progress_fill": "#0A84FF",
+
+    "log_bg": "#000000",
+    "log_fg": "#D4D4D4",
+    "log_timestamp_fg": "#8E8E93",
+
+    "entry_bg": "#3A3A3C",
+    "entry_fg": "#FFFFFF",
+    "entry_border": "rgba(255, 255, 255, 0.12)",
+
+    "combobox_bg": "#3A3A3C",
+    "combobox_fg": "#FFFFFF",
+    "combobox_arrow": "#8E8E93",
+
+    "separator": "rgba(255, 255, 255, 0.1)",
+    "shadow": "rgba(0, 0, 0, 0.3)",
+
+    "chip_bg": "#2C2C2E",
+    "chip_label_fg": "#8E8E93",
+    "chip_value_fg": "#FFFFFF",
+
+    "divider": "#38383A"
+}

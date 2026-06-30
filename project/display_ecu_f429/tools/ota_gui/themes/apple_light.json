@@ -1,0 +1,55 @@
+{
+    "_name": "Apple 浅色",
+    "_description": "iOS 风格浅色主题",
+
+    "bg": "#F5F5F7",
+    "fg": "#1D1D1F",
+    "fg_secondary": "rgba(60, 60, 67, 0.6)",
+    "fg_tertiary": "rgba(60, 60, 67, 0.3)",
+
+    "card_bg": "#FFFFFF",
+    "card_border": "rgba(0, 0, 0, 0.08)",
+
+    "success": "#34C759",
+    "error": "#FF3B30",
+    "warning": "#FF9500",
+    "info": "#5AC8FA",
+    "accent": "#007AFF",
+
+    "button_primary_bg": "#007AFF",
+    "button_primary_fg": "#FFFFFF",
+    "button_primary_hover": "#3395FF",
+    "button_primary_pressed": "#005FCC",
+
+    "button_danger_bg": "#951510",
+    "button_danger_fg": "#FFFFFF",
+    "button_danger_hover": "#77100C",
+
+    "button_secondary_bg": "rgba(0, 0, 0, 0.06)",
+    "button_secondary_fg": "#1D1D1F",
+    "button_secondary_hover": "rgba(0, 0, 0, 0.1)",
+
+    "progress_trough": "#E5E5EA",
+    "progress_fill": "#007AFF",
+
+    "log_bg": "#F2F2F7",
+    "log_fg": "#1D1D1F",
+    "log_timestamp_fg": "#8E8E93",
+
+    "entry_bg": "#FFFFFF",
+    "entry_fg": "#1D1D1F",
+    "entry_border": "rgba(0, 0, 0, 0.15)",
+
+    "combobox_bg": "#FFFFFF",
+    "combobox_fg": "#1D1D1F",
+    "combobox_arrow": "#8E8E93",
+
+    "separator": "rgba(0, 0, 0, 0.1)",
+    "shadow": "rgba(0, 0, 0, 0.08)",
+
+    "chip_bg": "#FFFFFF",
+    "chip_label_fg": "#8E8E93",
+    "chip_value_fg": "#1D1D1F",
+
+    "divider": "#C6C6C8"
+}
