@@ -499,6 +499,16 @@
               <FileType>1</FileType>
               <FilePath>..\task\task_entry.c</FilePath>
             </File>
+            <File>
+              <FileName>task_query.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\task\task_query.c</FilePath>
+            </File>
+            <File>
+              <FileName>task_query.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\task\task_query.h</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>

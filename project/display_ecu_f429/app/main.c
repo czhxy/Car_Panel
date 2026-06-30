@@ -9,11 +9,16 @@ int main(void)
     extern uint32_t __Vectors;
     SCB->VTOR = (uint32_t)&__Vectors;
 
+    /* NVIC 优先级分组: 4 位全用于抢占 (0-15)，对 FreeRTOS 和 OTA 串口中断至关重要 */
+    NVIC_PriorityGroupConfig(NVIC_PriorityGroup_4);
+
     /* SysTick 由 FreeRTOS 的 vPortSetupTimerInterrupt() 自动配置，此处不手动调用 */
     __enable_irq();
     UART_Init();
     LOG_I("\r\n================================\r\n");
-    LOG_I("App v1.0 (STM32F429) @ 0x%08X\r\n", (unsigned int)SCB->VTOR);
+    LOG_I("App v%d.%d (STM32F429) @ 0x%08X\r\n",
+           (int)APP_VERSION, (int)((APP_VERSION - (int)APP_VERSION) * 10 + 0.5),
+           (unsigned int)SCB->VTOR);
     LOG_I("SystemCoreClock = %u MHz\r\n",
            (unsigned int)(SystemCoreClock / 1000000));
     LOG_I("================================\r\n\r\n");

@@ -1,0 +1,55 @@
+{
+    "_name": "经典灰色",
+    "_description": "原始简洁灰色风格（无依赖）",
+
+    "bg": "#f5f5f5",
+    "fg": "#333333",
+    "fg_secondary": "#666666",
+    "fg_tertiary": "#999999",
+
+    "card_bg": "#fafafa",
+    "card_border": "#d9d9d9",
+
+    "success": "#28a745",
+    "error": "#dc3545",
+    "warning": "#ffc107",
+    "info": "#17a2b8",
+    "accent": "#007bff",
+
+    "button_primary_bg": "#007bff",
+    "button_primary_fg": "#ffffff",
+    "button_primary_hover": "#0069d9",
+    "button_primary_pressed": "#005cbf",
+
+    "button_danger_bg": "#8B1A1E",
+    "button_danger_fg": "#ffffff",
+    "button_danger_hover": "#6E1317",
+
+    "button_secondary_bg": "#6c757d",
+    "button_secondary_fg": "#ffffff",
+    "button_secondary_hover": "#5a6268",
+
+    "progress_trough": "#e0e0e0",
+    "progress_fill": "#007bff",
+
+    "log_bg": "#1e1e1e",
+    "log_fg": "#d4d4d4",
+    "log_timestamp_fg": "#888888",
+
+    "entry_bg": "#ffffff",
+    "entry_fg": "#333333",
+    "entry_border": "#cccccc",
+
+    "combobox_bg": "#ffffff",
+    "combobox_fg": "#333333",
+    "combobox_arrow": "#666666",
+
+    "separator": "#e0e0e0",
+    "shadow": "rgba(0, 0, 0, 0.1)",
+
+    "chip_bg": "#f0f0f0",
+    "chip_label_fg": "#888888",
+    "chip_value_fg": "#333333",
+
+    "divider": "#e0e0e0"
+}

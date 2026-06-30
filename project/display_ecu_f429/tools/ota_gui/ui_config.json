@@ -1,0 +1,47 @@
+{
+    "window": {
+        "title": "Car Panel OTA Tool v1.0",
+        "width": 720,
+        "height": 680,
+        "resizable": false
+    },
+    "theme": {
+        "default": "apple_dark",
+        "_options": ["apple_dark", "apple_light", "classic"]
+    },
+    "chip_panel": {
+        "show": true,
+        "font_size": 10
+    },
+    "serial_panel": {
+        "label_width": 80,
+        "combo_width": 15,
+        "button_width": 8,
+        "font_size": 10,
+        "baudrate_options": [9600, 19200, 38400, 57600, 115200, 460800, 921600],
+        "default_baudrate": 115200
+    },
+    "file_panel": {
+        "entry_width": 55,
+        "button_width": 10,
+        "font_size": 10,
+        "drop_hint_text": "拖拽 .bin 文件到此处或点击浏览选择"
+    },
+    "progress_bar": {
+        "length": 500,
+        "font_size": 9
+    },
+    "log_panel": {
+        "width": 100,
+        "height": 18,
+        "font_size": 9,
+        "max_lines": 5000,
+        "timestamp_format": "%H:%M:%S"
+    },
+    "button": {
+        "primary_width": 20,
+        "danger_width": 16,
+        "font_size": 10,
+        "padding": 2
+    }
+}

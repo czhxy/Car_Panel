@@ -6,6 +6,7 @@
 #include "bsp_led.h"
 #include "bsp_can.h"
 #include "mod_comm_can.h"
+#include "task_query.h"
 
 void Task_Entry_All(void * pvParameters);
 void Heartbeat_Task(void * pvParameters);
@@ -63,6 +64,8 @@ void Task_Entry_All(void * pvParameters)
         LOG_E("[Main] KEY_SCAN task create failed!\r\n");
     if (xTaskCreate(Heartbeat_Task, "HEARTBEAT", 512, NULL, 1, NULL) != pdPASS)
         LOG_E("[Main] HEARTBEAT task create failed!\r\n");
+    if (xTaskCreate(UART_Query_Task, "UART_QUERY", 256, NULL, 2, NULL) != pdPASS)
+        LOG_E("[Main] UART_QUERY task create failed!\r\n");
 
     vTaskDelete(NULL);
 }

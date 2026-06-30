@@ -4,7 +4,6 @@
   * @brief   Bootloader 入口 — 仅含 main() 主流程 (STM32F429)
   ******************************************************************************
   */
-//python tools\ymodem_send.py COM15 mdk\app.bin
 #include "stm32f4xx.h"
 #include "boot_config.h"
 #include "boot_decision.h"
@@ -26,6 +25,9 @@ int main(void)
 
     printf("\r\n================================\r\n");
     printf("Bootloader v1.0 (STM32F429)\r\n");
+    printf("App Software Version: v%d.%d\r\n",
+           (int)APP_SOFTWARE_VERSION,
+           (int)((APP_SOFTWARE_VERSION - (int)APP_SOFTWARE_VERSION) * 10 + 0.5));
     printf("Flash: %dKB (0x%08X - 0x%08X)\r\n",
            (int)(FLASH_TOTAL_SIZE / 1024),
            (unsigned int)FLASH_BASE_ADDR,

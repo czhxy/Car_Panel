@@ -14,4 +14,5 @@
 #include "usart.h"
 #include "bsp_log.h"
 
+#define APP_VERSION 1.0 
 #endif /* __MAIN_H */
