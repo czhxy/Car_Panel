@@ -3,7 +3,7 @@
   * @file    ota_params.c
   * @brief   OTA 参数管理 — CRC32 校验 + 参数读写
   *
-  *          CRC-32/MPEG-2: 多项式 0xEDB88320（反射），查表法
+  *          标准 CRC-32 (IEEE 802.3 / PKZIP): 多项式 0xEDB88320（反射），查表法
   *          标准测试向量: CRC32("123456789") = 0xCBF43926
   ******************************************************************************
   */
@@ -145,9 +145,10 @@ int ota_params_init(void)
 int ota_params_load(ota_param_t *param)
 {
     memcpy(param, (void *)OTA_PARAM_ADDR, sizeof(ota_param_t));
-    // 防御：如果 max_boot_count 为 0（历史遗留），修正为默认值
+    // 防御：如果 max_boot_count 为 0（历史遗留），修正并持久化
     if (param->magic == OTA_MAGIC && param->max_boot_count == 0) {
         param->max_boot_count = MAX_BOOT_ATTEMPTS;
+        ota_params_save(param);
     }
     return 0;
 }

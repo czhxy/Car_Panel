@@ -31,7 +31,7 @@ typedef struct __attribute__((packed)) {
 
 // ===== CRC32 函数 =====
 
-// 标准 CRC-32/MPEG-2（多项式 0xEDB88320，反射）
+// 标准 CRC-32 / IEEE 802.3（多项式 0xEDB88320，反射）
 uint32_t crc32_calc(const uint8_t *data, uint32_t len);
 
 // 计算 Flash 中指定地址范围的 CRC32

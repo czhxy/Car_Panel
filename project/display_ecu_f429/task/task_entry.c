@@ -45,9 +45,10 @@ void Task_Entry_All(void * pvParameters)
 
     BSP_LED_Init();
     BSP_KEY_Init();
-		BSP_CAN_Init();
-    /* 提前创建 CAN 队列，避免 RX 任务在队列就绪前启动 */
+    /* 先创建 CAN 收发队列，再初始化 CAN 硬件并使能接收中断，
+     * 确保接收中断触发时队列已就绪（避免首帧丢失） */
     Mod_Can_Init();
+    BSP_CAN_Init();
 
     /* 栈大小经过评估：
      * CAN_TX/RX: 512 字 = 2KB（队列收发 + 硬件调用）

@@ -284,11 +284,18 @@ int ymodem_receive(uint32_t target_addr, uint32_t max_size,
         uart_putc(ACK);
 
         if (status->packet_count % 16 == 0) {
-            printf("[YMODEM] %u/%u (%u%%)\r\n",
-                   (unsigned int)status->total_received,
-                   (unsigned int)status->file_size,
-                   (unsigned int)(status->total_received * 100 /
-                                  status->file_size));
+            /* file_size 可能为 0（文件名包未携带大小），需防除零 */
+            if (status->file_size > 0) {
+                printf("[YMODEM] %u/%u (%u%%)\r\n",
+                       (unsigned int)status->total_received,
+                       (unsigned int)status->file_size,
+                       (unsigned int)(status->total_received * 100 /
+                                      status->file_size));
+            } else {
+                printf("[YMODEM] %u/%u (size unknown)\r\n",
+                       (unsigned int)status->total_received,
+                       (unsigned int)status->file_size);
+            }
         }
     }
 

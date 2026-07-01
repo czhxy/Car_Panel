@@ -21,4 +21,7 @@ int  flash_if_write(uint32_t addr, const uint8_t *data, uint32_t len);
 // 根据地址获取 Flash 扇区编号（FLASH_Sector_n 常量）
 uint32_t flash_if_get_sector(uint32_t addr);
 
+// Flash 内拷贝（src 读到 dst 写入，按 Word 对齐）
+int  flash_if_copy(uint32_t src_addr, uint32_t dst_addr, uint32_t len);
+
 #endif /* __FLASH_CONTROL_H */

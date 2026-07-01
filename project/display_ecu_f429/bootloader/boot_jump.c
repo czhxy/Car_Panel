@@ -2,7 +2,7 @@
   ******************************************************************************
   * @file    boot_jump.c
   * @brief   Bootloader App 跳转 — 关中断/清除挂起/设 MSP/设 VTOR/跳转
-  *          STM32F429: SRAM 192KB (0x20000000 - 0x2002FFFF)
+  *          STM32F429: 连续 SRAM 128KB (0x20000000 - 0x2001FFFF); CCM 64KB @0x10000000
   ******************************************************************************
   */
 
@@ -19,8 +19,8 @@ void jump_to_app(uint32_t app_addr)
     printf("[BOOT] Jumping to App at 0x%08X...\r\n", (unsigned int)app_addr);
     printf("[BOOT]   SP = 0x%08X, PC = 0x%08X\r\n", (unsigned int)sp, (unsigned int)pc);
 
-    // F429 有 192KB SRAM (0x20000000 - 0x20030000)
-    if (sp < 0x20000000 || sp >= 0x20030000) {
+    // F429 连续 SRAM 128KB (0x20000000 - 0x2001FFFF); CCM 64KB @0x10000000 不在连续区
+    if (sp < 0x20000000 || sp >= 0x20020000) {
         printf("[BOOT] ERROR: Invalid stack pointer 0x%08X! Abort jump.\r\n", (unsigned int)sp);
         return;
     }
@@ -46,6 +46,6 @@ void jump_to_app(uint32_t app_addr)
 int partition_is_valid(uint32_t addr)
 {
     uint32_t sp = *((volatile uint32_t *)addr);
-    // F429: 192KB SRAM @ 0x20000000
-    return (sp >= 0x20000000 && sp < 0x20030000);
+    // F429: 连续 SRAM 128KB @ 0x20000000 (0x20000000 - 0x2001FFFF)
+    return (sp >= 0x20000000 && sp < 0x20020000);
 }

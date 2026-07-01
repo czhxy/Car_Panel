@@ -35,14 +35,17 @@ void UART_Init(void)
 	USART_Cmd(USART1, ENABLE);
 
 	// 中断和 NVIC 在 USART 初始化之后配置（Best Practice）
+	// Bootloader 使用 YMODEM 轮询收发，不得开启 RX 中断（与 uart_getc_timeout 轮询冲突）
+#ifndef BOOTLOADER
 	USART_ITConfig(USART1, USART_IT_RXNE, ENABLE);
 
 	NVIC_InitTypeDef NVIC_InitStructure;
 	NVIC_InitStructure.NVIC_IRQChannel                   = USART1_IRQn;
 	NVIC_InitStructure.NVIC_IRQChannelCmd                = ENABLE;
 	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 6;
-	NVIC_InitStructure.NVIC_IRQChannelSubPriority        = 6;
+	NVIC_InitStructure.NVIC_IRQChannelSubPriority        = 0; /* Group_4 下子优先级无位，必须为 0 */
 	NVIC_Init(&NVIC_InitStructure);
+#endif
 }
 
 // ===== printf 重定向到 USART1 =====
@@ -92,7 +95,7 @@ void UART_SendByte(uint8_t Byte)
 	USART_SendData(USART1, Byte);
 }
 
-void UART_SendArray(uint8_t *Array, uint16_t Length)
+void UART_SendArray(const uint8_t *Array, uint16_t Length)
 {
 	uint16_t i;
 	for (i = 0; i < Length; i++) {
@@ -100,9 +103,9 @@ void UART_SendArray(uint8_t *Array, uint16_t Length)
 	}
 }
 
-void UART_SendString(char *String)
+void UART_SendString(const char *String)
 {
-	uint8_t i;
+	size_t i;
 	for (i = 0; String[i] != '\0'; i++) {
 		UART_SendByte(String[i]);
 	}
@@ -119,7 +122,7 @@ static uint32_t UART_Pow(uint32_t X, uint32_t Y)
 
 void UART_SendNumber(uint32_t Number, uint8_t Length)
 {
-	uint8_t i;
+	size_t i;
 	for (i = 0; i < Length; i++) {
 		UART_SendByte(Number / UART_Pow(10, Length - i - 1) % 10 + '0');
 	}
@@ -130,11 +133,12 @@ void UART_Printf(char *format, ...)
 	char String[200];
 	va_list arg;
 	va_start(arg, format);
-	vsprintf(String, format, arg);
+	vsnprintf(String, sizeof(String), format, arg);
 	va_end(arg);
 	UART_SendString(String);
 }
 
+#ifndef BOOTLOADER
 void USART1_IRQHandler(void)
 {
 	// RXNE: 收到数据，读 DR 存入环形缓冲区
@@ -154,3 +158,4 @@ void USART1_IRQHandler(void)
 		(void)USART1->DR;
 	}
 }
+#endif
