@@ -9,12 +9,15 @@
 
   <project>
     <PathAndName>..\mdk\app.uvprojx</PathAndName>
-    <NodeIsExpanded>1</NodeIsExpanded>
+    <NodeIsActive>1</NodeIsActive>
+  </project>
+
+  <project>
+    <PathAndName>..\mdk\app_b.uvprojx</PathAndName>
   </project>
 
   <project>
     <PathAndName>..\mdk\boot.uvprojx</PathAndName>
-    <NodeIsActive>1</NodeIsActive>
     <NodeIsExpanded>1</NodeIsExpanded>
   </project>
 

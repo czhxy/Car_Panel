@@ -1,10 +1,21 @@
 /**
   ******************************************************************************
   * @file    ota_params.c
-  * @brief   OTA 参数管理 — CRC32 校验 + 参数读写
+  * @brief   OTA 参数管理 — CRC32 校验 + 掉电安全的 append-only 磨损均衡日志
   *
   *          标准 CRC-32 (IEEE 802.3 / PKZIP): 多项式 0xEDB88320（反射），查表法
   *          标准测试向量: CRC32("123456789") = 0xCBF43926
+  *
+  *          存储方案（H1 修复）：
+  *          Sector 4 (64KB) 作为 append-only 日志区，每条记录占 1 个 64B 槽位，
+  *          共 1024 槽。save() 顺序追加写下一个已擦除槽（无需每次擦除），
+  *          仅当日志区满（每 1024 次 save）才整扇区擦除并重写。
+  *
+  *          掉电安全：单次 save 只写一条 64B 记录，写入中途掉电 → 该记录 CRC
+  *          不匹配 → load() 跳过它、取上一条有效记录。故常规 save（每启动/每次
+  *          OTA 发生）完全掉电安全；仅"日志满触发整扇区擦除"这一极低频事件
+  *          （1/1024）存在擦除-重写之间的窗口，且该窗口失败时退化为"参数初
+  *          始化、回滚到默认 active=A"，仍可安全启动。
   ******************************************************************************
   */
 
@@ -12,7 +23,7 @@
 #include "flash_control.h"
 #include <string.h>
 
-// ===== CRC32 查表（多项式 0xEDB88320，反射） =====
+// ===== CRC32 查表（多项式 0xEDB88320，反射；已修正 L5 的 3 处笔误为标准表） =====
 static const uint32_t crc32_table[256] = {
     0x00000000, 0x77073096, 0xEE0E612C, 0x990951BA,
     0x076DC419, 0x706AF48F, 0xE963A535, 0x9E6495A3,
@@ -32,7 +43,7 @@ static const uint32_t crc32_table[256] = {
     0x2F6F7C87, 0x58684C11, 0xC1611DAB, 0xB6662D3D,
     0x76DC4190, 0x01DB7106, 0x98D220BC, 0xEFD5102A,
     0x71B18589, 0x06B6B51F, 0x9FBFE4A5, 0xE8B8D433,
-    0x7807C9A2, 0x0F00F934, 0x9609A88F, 0xE10E9818,
+    0x7807C9A2, 0x0F00F934, 0x9609A88E, 0xE10E9818,
     0x7F6A0DBB, 0x086D3D2D, 0x91646C97, 0xE6635C01,
     0x6B6B51F4, 0x1C6C6162, 0x856530D8, 0xF262004E,
     0x6C0695ED, 0x1B01A57B, 0x8208F4C1, 0xF50FC457,
@@ -60,7 +71,7 @@ static const uint32_t crc32_table[256] = {
     0xDF60EFC3, 0xA867DF55, 0x316E8EEF, 0x4669BE79,
     0xCB61B38C, 0xBC66831A, 0x256FD2A0, 0x5268E236,
     0xCC0C7795, 0xBB0B4703, 0x220216B9, 0x5505262F,
-    0xC5BA3BBE, 0xB2BD0B28, 0x2BB45A92, 0x5CB30A04,
+    0xC5BA3BBE, 0xB2BD0B28, 0x2BB45A92, 0x5CB36A04,
     0xC2D7FFA7, 0xB5D0CF31, 0x2CD99E8B, 0x5BDEAE1D,
     0x9B64C2B0, 0xEC63F226, 0x756AA39C, 0x026D930A,
     0x9C0906A9, 0xEB0E363F, 0x72076785, 0x05005713,
@@ -101,71 +112,157 @@ uint32_t crc32_flash(uint32_t addr, uint32_t len)
     return crc ^ 0xFFFFFFFF;
 }
 
+// ============================================================
+// append-only 日志布局（Sector 4, 64KB）
+//   每槽 64B，共 1024 槽；每条记录 = magic(4) + seq(4) + ota_param_t(52) + crc(4) = 64B
+// ============================================================
+#define OTA_LOG_ADDR        OTA_PARAM_ADDR            // 0x08010000
+#define OTA_LOG_SIZE        0x00010000U               // 64KB（整扇区）
+#define OTA_SLOT_SIZE       64U
+#define OTA_SLOT_COUNT      (OTA_LOG_SIZE / OTA_SLOT_SIZE)   // 1024
+
+typedef struct {
+    uint32_t      magic;     // OTA_MAGIC
+    uint32_t      seq;       // 单调递增序号，用于选最新
+    ota_param_t   param;     // 载荷（52B，packed）
+    uint32_t      crc;       // crc32 覆盖 magic+seq+param（即本字段之前的全部字节）
+} ota_log_record_t;          // = 64B（无填充：param@8 起 4 字节对齐，crc@60 起 4 字节对齐）
+
+#define RECORD_CRC_LEN      (sizeof(ota_log_record_t) - sizeof(uint32_t))   // 60
+
+// ===== 内部：纯读取最新有效记录（不触发 save，避免递归） =====
+static int load_latest(ota_param_t *param, uint32_t *out_seq)
+{
+    uint32_t best_seq = 0;
+    int found = 0;
+
+    memset(param, 0, sizeof(ota_param_t));
+
+    for (uint32_t i = 0; i < OTA_SLOT_COUNT; i++) {
+        const volatile ota_log_record_t *rec =
+            (const volatile ota_log_record_t *)(OTA_LOG_ADDR + i * OTA_SLOT_SIZE);
+
+        // 首个非 magic 槽视为日志尾（append-only，无空洞）
+        if (rec->magic != OTA_MAGIC) {
+            break;
+        }
+
+        // CRC 不匹配 = 写入中途掉电的损坏记录，跳过
+        uint32_t crc = crc32_calc((const uint8_t *)rec, RECORD_CRC_LEN);
+        if (crc != rec->crc) {
+            continue;
+        }
+
+        if (!found || rec->seq >= best_seq) {
+            best_seq = rec->seq;
+            *param = rec->param;
+            found = 1;
+        }
+    }
+
+    if (out_seq) *out_seq = found ? best_seq : 0;
+    return found;
+}
+
+// ===== 构造一条记录并写入指定槽地址（槽必须已擦除） =====
+static int write_record(uint32_t addr, const ota_param_t *param, uint32_t seq)
+{
+    ota_log_record_t rec;
+    rec.magic = OTA_MAGIC;
+    rec.seq   = seq;
+    rec.param = *param;
+    rec.crc   = crc32_calc((const uint8_t *)&rec, RECORD_CRC_LEN);
+
+    return flash_if_write(addr, (const uint8_t *)&rec, sizeof(ota_log_record_t));
+}
+
 // ===== 参数管理函数 =====
 
-// 初始化参数区（首次上电或 magic 不匹配时调用）
+// 初始化参数区（首次上电或无有效记录时调用）：擦除 + 写默认记录到槽 0
 int ota_params_init(void)
 {
     ota_param_t param;
     memset(&param, 0, sizeof(param));
 
-    param.magic              = OTA_MAGIC;
-    param.param_version      = 0x00010000;        // v1.0.0
-    param.active_partition   = APP_A_ACTIVE;       // 默认运行 App A
-    param.ota_state          = OTA_STATE_IDLE;
-    param.boot_count         = 0;
-    param.max_boot_count     = MAX_BOOT_ATTEMPTS;  // 默认 3 次
+    param.magic            = OTA_MAGIC;
+    param.param_version    = 0x00010000;        // v1.0.0
+    param.active_partition = APP_A_ACTIVE;       // 默认运行 App A
+    param.ota_state        = OTA_STATE_IDLE;
+    param.boot_count       = 0;
+    param.max_boot_count   = MAX_BOOT_ATTEMPTS;  // 默认 3 次
 
-    // App 区初始信息写 0（表示无效）
-    param.app_a_version      = 0;
-    param.app_a_size         = 0;
-    param.app_a_crc32        = 0;
-    param.app_b_version      = 0;
-    param.app_b_size         = 0;
-    param.app_b_crc32        = 0;
+    param.app_a_version    = 0;
+    param.app_a_size       = 0;
+    param.app_a_crc32      = 0;
+    param.app_b_version    = 0;
+    param.app_b_size       = 0;
+    param.app_b_crc32      = 0;
 
-    // 擦除参数区
     flash_if_init();
-    if (flash_if_erase(OTA_PARAM_ADDR, OTA_PARAM_SIZE) != 0) {
+    if (flash_if_erase(OTA_LOG_ADDR, OTA_LOG_SIZE) != 0) {
         flash_if_lock();
         return -1;
     }
-
-    // 写入参数
-    if (flash_if_write(OTA_PARAM_ADDR, (uint8_t *)&param, sizeof(param)) != 0) {
+    if (write_record(OTA_LOG_ADDR, &param, 0) != 0) {
         flash_if_lock();
         return -1;
     }
-
     flash_if_lock();
     return 0;
 }
 
-// 从 Flash 加载参数到 RAM
+// 从 Flash 加载最新有效参数到 RAM
 int ota_params_load(ota_param_t *param)
 {
-    memcpy(param, (void *)OTA_PARAM_ADDR, sizeof(ota_param_t));
-    // 防御：如果 max_boot_count 为 0（历史遗留），修正并持久化
-    if (param->magic == OTA_MAGIC && param->max_boot_count == 0) {
+    uint32_t seq = 0;
+    int found = load_latest(param, &seq);
+
+    // 防御：历史遗留 max_boot_count==0 修正并持久化
+    if (found && param->magic == OTA_MAGIC && param->max_boot_count == 0) {
         param->max_boot_count = MAX_BOOT_ATTEMPTS;
         ota_params_save(param);
     }
-    return 0;
+    return found ? 0 : 0;   // 始终返回 0；调用方据 magic 判断是否有效
 }
 
-// 保存参数到 Flash（擦除 + 写入）
+// 保存参数：追加写下一条记录；日志满则整扇区擦除并重写槽 0
 int ota_params_save(const ota_param_t *param)
 {
+    ota_param_t cur;
+    uint32_t cur_seq;
+    load_latest(&cur, &cur_seq);
+
+    uint32_t new_seq = cur_seq + 1;
+
     flash_if_init();
 
-    if (flash_if_erase(OTA_PARAM_ADDR, OTA_PARAM_SIZE) != 0) {
-        flash_if_lock();
-        return -1;
+    // 寻找首个已擦除槽（magic != OTA_MAGIC）
+    uint32_t free_slot = OTA_SLOT_COUNT;
+    for (uint32_t i = 0; i < OTA_SLOT_COUNT; i++) {
+        const volatile uint32_t *slot_magic =
+            (const volatile uint32_t *)(OTA_LOG_ADDR + i * OTA_SLOT_SIZE);
+        if (*slot_magic != OTA_MAGIC) {
+            free_slot = i;
+            break;
+        }
     }
 
-    if (flash_if_write(OTA_PARAM_ADDR, (uint8_t *)param, sizeof(ota_param_t)) != 0) {
-        flash_if_lock();
-        return -1;
+    if (free_slot < OTA_SLOT_COUNT) {
+        // 追加写已擦除槽，无需擦除
+        if (write_record(OTA_LOG_ADDR + free_slot * OTA_SLOT_SIZE, param, new_seq) != 0) {
+            flash_if_lock();
+            return -1;
+        }
+    } else {
+        // 日志满：整扇区擦除后重写槽 0（每 1024 次 save 触发一次）
+        if (flash_if_erase(OTA_LOG_ADDR, OTA_LOG_SIZE) != 0) {
+            flash_if_lock();
+            return -1;
+        }
+        if (write_record(OTA_LOG_ADDR, param, new_seq) != 0) {
+            flash_if_lock();
+            return -1;
+        }
     }
 
     flash_if_lock();

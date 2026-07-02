@@ -1,0 +1,21 @@
+; *************************************************************
+; *** Scatter-Loading Description File — App B (真 AB 的 B 槽) ***
+; *** STM32F429IGTx App B 384KB (0x08080000-0x080DFFFF)       ***
+; *************************************************************
+; 与 app.sct 仅加载/执行区地址不同；RAM 布局相同（A/B 任一时刻只运行一份）。
+
+LR_IROM1 0x08080000 0x00060000  {    ; 加载区：App B 384KB
+  ER_IROM1 0x08080000 0x00060000  {  ; 执行区
+   *.o (RESET, +First)
+   startup_*.o (+RO)
+   .ANY (+RO)
+  }
+  RW_IRAM1 0x20000000 0x00020000  {  ; 128KB 主 SRAM (SRAM1 112KB + SRAM2 16KB)；外设/DMA 缓冲与一般数据
+   .ANY (+RW +ZI)
+  }
+  ; ---- CCM 64KB @0x10000000：仅 CPU 可访问，DMA 不可达 ----
+  ; ---- 放 FreeRTOS 堆 (heap_4 的 ucHeap 64KB)，释放主 SRAM；DMA 缓冲严禁经 heap 分配至此 ----
+  RW_IRAM2 0x10000000 0x00010000  {
+   heap_4.o (+ZI)
+  }
+}

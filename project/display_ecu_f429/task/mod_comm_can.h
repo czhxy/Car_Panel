@@ -5,7 +5,7 @@
 #include <stdbool.h>
 #include "FreeRTOS.h"
 #include "queue.h"
-#include "CAN_Protocol.h"
+#include "can_protocol.h"
 
 /* ============================================================
  * ModCanFrame —— 平台无关 CAN 帧（应用层统一使用、与芯片无关）

@@ -1,13 +1,13 @@
 /**
   ******************************************************************************
   * @file    ota.h
-  * @brief   OTA 升级入口 — YMODEM 接收/校验/参数保存
+  * @brief   OTA 升级 — 真 AB：YMODEM 写非活跃槽 / 校验 / 翻转 active / 重启
   ******************************************************************************
   */
 
 #ifndef __OTA_H
 #define __OTA_H
 
-void ota_ymodem_start(void);
+void ota_ymodem_start(void);   /* 写非活跃槽 + 校验 + 翻转 active + 重启 */
 
 #endif /* __OTA_H */
