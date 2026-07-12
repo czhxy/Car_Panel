@@ -340,7 +340,7 @@
               <MiscControls></MiscControls>
               <Define>USE_STDPERIPH_DRIVER</Define>
               <Undefine></Undefine>
-              <IncludePath>.\Start;.\Library;.\User;.\System;.\Hardware</IncludePath>
+              <IncludePath>.\Start;.\Library;.\User;.\System;.\mod;.\task;.\driver;.\component\queue;.\component;.\protocol</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -664,10 +664,127 @@
               <FileType>5</FileType>
               <FilePath>.\System\Delay.h</FilePath>
             </File>
+            <File>
+              <FileName>sysclock.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\System\sysclock.c</FilePath>
+            </File>
+            <File>
+              <FileName>sysclock.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\System\sysclock.h</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
-          <GroupName>Hardware</GroupName>
+          <GroupName>Mod</GroupName>
+          <Files>
+            <File>
+              <FileName>Mod_Comm_Can.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Mod\Mod_Comm_Can.c</FilePath>
+            </File>
+            <File>
+              <FileName>Mod_Comm_Can.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\Mod\Mod_Comm_Can.h</FilePath>
+            </File>
+            <File>
+              <FileName>Mod_Usart.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Mod\Mod_Usart.c</FilePath>
+            </File>
+            <File>
+              <FileName>Mod_Usart.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\Mod\Mod_Usart.h</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>component</GroupName>
+          <Files>
+            <File>
+              <FileName>queue.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\component\queue\queue.c</FilePath>
+            </File>
+            <File>
+              <FileName>queue.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\component\queue\queue.h</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>protocol</GroupName>
+          <Files>
+            <File>
+              <FileName>CAN_Protocol.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\protocol\CAN_Protocol.h</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>driver</GroupName>
+          <Files>
+            <File>
+              <FileName>drv_can.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\driver\drv_can.c</FilePath>
+            </File>
+            <File>
+              <FileName>drv_usart.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\driver\drv_usart.c</FilePath>
+            </File>
+            <File>
+              <FileName>drv_usart.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\driver\drv_usart.h</FilePath>
+            </File>
+            <File>
+              <FileName>drv_can.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\driver\drv_can.h</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>task</GroupName>
+          <Files>
+            <File>
+              <FileName>task_comm_can.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\task\task_comm_can.c</FilePath>
+            </File>
+            <File>
+              <FileName>task_comm_can.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\task\task_comm_can.h</FilePath>
+            </File>
+            <File>
+              <FileName>task_motor_ctl.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\task\task_motor_ctl.c</FilePath>
+            </File>
+            <File>
+              <FileName>task_motor_ctl.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\task\task_motor_ctl.h</FilePath>
+            </File>
+            <File>
+              <FileName>task_uart.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\task\task_uart.c</FilePath>
+            </File>
+            <File>
+              <FileName>task_uart.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\task\task_uart.h</FilePath>
+            </File>
+          </Files>
         </Group>
         <Group>
           <GroupName>User</GroupName>
@@ -676,6 +793,11 @@
               <FileName>main.c</FileName>
               <FileType>1</FileType>
               <FilePath>.\User\main.c</FilePath>
+            </File>
+            <File>
+              <FileName>main.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\User\main.h</FilePath>
             </File>
             <File>
               <FileName>stm32f10x_conf.h</FileName>

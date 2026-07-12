@@ -121,8 +121,15 @@ void ModCommCan_Tx(void)
     while (xQueueReceive(CanTxQueue, &frame, 0) == pdPASS) {
         CanTxMsg tx_msg;
         memset(&tx_msg, 0, sizeof(tx_msg));
-        if (frame.ide == MOD_CAN_IDE_EXT) { tx_msg.ExtId = frame.id & 0x1FFFFFFFU; tx_msg.IDE = CAN_ID_EXT; }
-        else                               { tx_msg.StdId = frame.id & 0x7FFU;       tx_msg.IDE = CAN_ID_STD; }
+        if (frame.ide == MOD_CAN_IDE_EXT) 
+				{ 
+					tx_msg.ExtId = frame.id & 0x1FFFFFFFU; tx_msg.IDE = CAN_ID_EXT; 
+				}
+        else                               
+				{ 
+					tx_msg.StdId = frame.id & 0x7FFU;       
+					tx_msg.IDE = CAN_ID_STD; 
+				}
         tx_msg.RTR = (frame.rtr == MOD_CAN_RTR_REMOTE) ? CAN_RTR_REMOTE : CAN_RTR_DATA;
         tx_msg.DLC = (frame.dlc > 8) ? 8 : frame.dlc;
         memcpy(tx_msg.Data, frame.data, tx_msg.DLC);
@@ -168,6 +175,7 @@ void Mod_Can_RxTask(void *pvParameters)
                 ModCommCan_OnRxFrame(&rx_msg);
             }
         }
+				vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
 
