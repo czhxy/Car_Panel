@@ -699,6 +699,16 @@
               <FileType>5</FileType>
               <FilePath>.\Mod\Mod_Usart.h</FilePath>
             </File>
+            <File>
+              <FileName>Mod_Motor.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Mod\Mod_Motor.c</FilePath>
+            </File>
+            <File>
+              <FileName>Mod_Motor.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\Mod\Mod_Motor.h</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
@@ -748,6 +758,16 @@
               <FileName>drv_can.h</FileName>
               <FileType>5</FileType>
               <FilePath>.\driver\drv_can.h</FilePath>
+            </File>
+            <File>
+              <FileName>drv_motor.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\driver\drv_motor.h</FilePath>
+            </File>
+            <File>
+              <FileName>drv_motor.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\driver\drv_motor.c</FilePath>
             </File>
           </Files>
         </Group>

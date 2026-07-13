@@ -1,8 +1,6 @@
 #ifndef __SYSCLOCK_H
 #define __SYSCLOCK_H
 
-
-
 #include "stm32f10x.h"                  // Device header
 typedef struct task_period
 {
@@ -27,7 +25,7 @@ typedef struct task_period_flag
 	uint8_t task_period_500ms;
 	uint8_t task_period_1000ms;
 }TaskPeriodFlag_t;
-extern TaskPeriodFlag_t * tpf ;
+extern TaskPeriodFlag_t tpf;
 
 void Sysclock_Init(void);
 void sys_delay_ms(uint32_t ms);

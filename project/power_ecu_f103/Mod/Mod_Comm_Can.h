@@ -4,9 +4,9 @@
 #include "queue.h"
 #include "drv_can.h"
 void Mod_Can_Init(void);
-void Can_Tx_Event(void);
+void Can_Tx_Event(CanTxMsg * TxMsg);
 void Can_Rx_Event(void);
-void Can_Tx_Process(void);
+uint8_t Can_Tx_Process(void);
 void Can_Rx_Process(void);
 void Can_Rx_Cb(CanRxMsg * msg);
 #endif 

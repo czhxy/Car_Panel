@@ -1,41 +1,61 @@
 #include "Mod_Comm_Can.h"
-#define CAN_TX_QUEUE_BUFFER_SIZE 10
-#define CAN_RX_QUEUE_BUFFER_SIZE 10
+
 static QueueType CanTxQueue;
 static QueueType CanRxQueue;
-static uint8_t CanTxQueueBuffer[CAN_TX_QUEUE_BUFFER_SIZE * sizeof(CanTxMsg)];
-static uint8_t CanRxQueueBuffer[CAN_RX_QUEUE_BUFFER_SIZE * sizeof(CanRxMsg)];
+static CanTxMsg CanTxQueueBufferPool[20];
+static CanRxMsg CanRxQueueBufferPool[20];
+
 void Mod_Can_Init(void)
 {
 	drv_can_init();
 	can_rx_cb_register(Can_Rx_Cb);
-	Queue_Init(&CanTxQueue,CanTxQueueBuffer,sizeof(CanTxQueueBuffer),sizeof(CanTxMsg));
-	Queue_Init(&CanRxQueue,CanRxQueueBuffer,sizeof(CanRxQueueBuffer),sizeof(CanRxMsg));
+	Queue_Init(&CanTxQueue,CanTxQueueBufferPool,sizeof(CanTxQueueBufferPool),sizeof(CanTxQueueBufferPool[0]));
+	Queue_Init(&CanRxQueue,CanRxQueueBufferPool,sizeof(CanRxQueueBufferPool),sizeof(CanRxQueueBufferPool[0]));
 }
-void Can_Tx_Event(void)
+void Can_Tx_Event(CanTxMsg * TxMsg)
 {
-	//½«Êı¾İ·Åµ½tx¶ÓÁĞ
+	if(TxMsg == NULL) return;
+	if(!Queue_Put(&CanTxQueue,TxMsg))
+	{
+		/* TX é˜Ÿåˆ—æ»¡ï¼šæ•°æ®ä¸¢å¤±ï¼Œåº”æœ‰å‘Šè­¦è®°å½• */
+	}
 }
 
-void Can_Tx_Process(void)
+CanTxMsg TxPack;
+CanRxMsg RxPack;
+uint8_t  Can_Tx_Process(void)
 {
-	//È¡³ötx¶ÓÁĞÖĞµÄÊı¾İ²¢·¢ËÍ
+	uint8_t mb;
+	if(Queue_Query(&CanTxQueue,&TxPack))
+	{
+		mb = CAN_Transmit(CAN1,&TxPack);
+		if(mb != CAN_NO_MB)
+		{
+			Queue_Get(&CanTxQueue,&TxPack);
+		}
+		return mb;
+	}
+	return CAN_TxStatus_NoMailBox;
 }
-	
 
 void Can_Rx_Event(void)
 {
-	//½«Êı¾İ·Å½ørx¶ÓÁĞ
-	
+	/* å°†æ•°æ®æ”¾è¿›RXé˜Ÿåˆ— */
+	Queue_Put(&CanRxQueue,&RxPack);
 }
 
 void Can_Rx_Process(void)
 {
-	//¶ÔÈ¡³örx¶ÓÁĞÖĞµÄÊı¾İ½øĞĞ´¦Àí
-}
-//rx»Øµ÷º¯Êı
-void Can_Rx_Cb(CanRxMsg * msg)
-{
-	
+	/* è¯»å–RXé˜Ÿåˆ—ä¸­çš„æ•°æ®è¿›è¡Œå¤„ç† */
+	if(Queue_Query(&CanRxQueue,&RxPack))
+	{	
+		//å°†canå†…å®¹è§£æå‡ºæ¥ï¼Œå‡†å¤‡ä¼ ç»™ç”µæœº
+		Queue_Get(&CanRxQueue,&RxPack);
+	}	
 }
 
+/* RX å›è°ƒå‡½æ•° */
+void Can_Rx_Cb(CanRxMsg * msg)
+{
+	Can_Rx_Event();
+}

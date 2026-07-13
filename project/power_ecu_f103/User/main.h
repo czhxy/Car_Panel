@@ -4,4 +4,4 @@
 #include "task_motor_ctl.h"
 #include "task_uart.h"
 #include "sysclock.h"
-extern TaskPeriodFlag_t * tpf;
+extern TaskPeriodFlag_t tpf;

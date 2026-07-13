@@ -59,7 +59,7 @@ extern "C" {
 #define CAN_ADDR_MOTORBOARD     0x2U    /* 电机板 */
 #define CAN_ADDR_MAX            0x0FU   /* 地址上限 */
 
-#define CAN_SELF_ADDR   CAN_ADDR_MAINBOARD
+#define CAN_SELF_ADDR   CAN_ADDR_MOTORBOARD
 
 /* ================================================================
  * 优先级定义

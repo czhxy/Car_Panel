@@ -1,20 +1,18 @@
 #include "task_comm_can.h"
+
 void Task_Comm_Can_Init(void)
 {
 	Mod_Can_Init();
 }
+
 void Task_Comm_Rx_Can(void)
 {
-		//取Rx队列的数据
-		
-		//对数据进行处理
-		Can_Rx_Process();
+	/* 鍙朢X闃熷垪鐨勬暟鎹苟杩涜澶勭悊 */
+	Can_Rx_Process();
 }
 
 void Task_Comm_Tx_Can(void)
-{	
-		//取Tx队列的数据
-		
-		//对数据进行处理
-		Can_Tx_Process();
+{
+	uint8_t mb = Can_Tx_Process();
+	(void)mb; /* 杩斿洖鍊硷細鎴愬姛=mailbox鍙凤紝NoMailBox=閭婊＄◢鍚庨噸璇曪紝绌洪槦鍒楁椂鍚屼笂 */
 }
