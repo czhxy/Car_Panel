@@ -1,6 +1,6 @@
 # CLAUDE.md — 动力域 ECU（STM32F103C8T6）
 
-> 仅包含动力域相关内容。全项目上下文还会自动加载根目录 `../CLAUDE.md`。
+> 总体概览。当前进度和待完成任务见 `HANDOFF.md`。
 
 ## 角色
 
@@ -12,73 +12,63 @@
 | 主频 | 72MHz（HSE 8MHz → PLL ×9） |
 | Flash | 64KB |
 | RAM | 20KB |
-| RTOS | 无（裸机开发） |
+| RTOS | 无（裸机开发，主循环 + SysTick 中断驱动多周期调度） |
 | Bootloader | 无（单 App，从 0x08000000 直接启动） |
 
 **对上通信**：通过 CAN 总线（500kbps, 29-bit 扩展帧）向显示域 ECU（STM32F429）上报状态、接收控制指令。
 
-## 当前完成状态
+## 当前状态概要
 
-| 模块 | 文件 | 状态 |
-|---|---|---|
-| Keil 工程 | `Project.uvprojx` | 已配置（armcc V5.06, C99, 优化等级 1） |
-| 标准外设库 | `Library/` | 已集成 SPL V3.5.0 |
-| 启动 + 时钟 | `Start/` | 已配置 72MHz |
-| 环形队列 | `component/queue/queue.c` | 已实现 |
-| 延时函数 | `System/Delay.c` | 已实现（SysTick 轮询，裸机用） |
-| 中断模板 | `User/stm32f10x_it.c` | 默认模板（故障死循环） |
-| **drv_can** | `driver/drv_can.c` | **空壳（只有 #include）** |
-| **drv_usart** | `driver/drv_usart.c` | **空壳（只有 #include）** |
-| **task_comm_can** | `task/task_comm_can.c` | **空文件** |
-| **task_motor_ctl** | `task/task_motor_ctl.c` | **空文件** |
-| **task_uart** | `task/task_uart.c` | **空文件** |
-| **main.c** | `User/main.c` | **空死循环** |
+CAN 通信基础设施已完整实现并修复（TX/RX 双队列、中断接收、SCE 错误恢复、多周期调度框架）。电机驱动、CAN 协议帧组装、串口日志、故障保护尚未实现。
+
+**详细进度 → [`HANDOFF.md`](./HANDOFF.md)**
 
 ## 工程文件分组（Keil 内）
 
-| 组名 | 文件 | 说明 |
+| 组名 | 主要文件 | 说明 |
 |---|---|---|
 | Start | startup_stm32f10x_md.s, core_cm3.c, system_stm32f10x.c | 启动文件 + CMSIS |
 | Library | SPL 全部外设库 | ADC/CAN/DMA/GPIO/TIM/USART 等 |
-| System | Delay.c/h | 精确延时 |
-| Hardware | (空) | 待添加板级外设 |
-| driver | drv_can.c/h, drv_usart.c/h | 底层驱动 |
-| task | task_comm_can.c/h, task_motor_ctl.c/h, task_uart.c/h | 业务任务 |
+| System | Delay.c/h, sysclock.c/h | 精确延时 + 周期调度 |
+| Mod | Mod_Comm_Can.c/h, Mod_Motor.c/h, Mod_Usart.c/h | 模块层（业务封装） |
+| component | queue.c/h | 环形队列 |
+| protocol | CAN_Protocol.h | CAN ID 位域定义 |
+| driver | drv_can.c/h, drv_motor.c/h, drv_usart.c/h | 底层驱动 |
+| task | task_comm_can.c/h, task_motor_ctl.c/h, task_uart.c/h | 任务调度 |
 | User | main.c/h, stm32f10x_conf.h, stm32f10x_it.c/h | 用户代码 |
 
-## 硬件引脚分配（尚未编码实现）
+## 硬件引脚分配
 
-| 功能 | 引脚 | 外设 |
-|---|---|---|
-| CAN1_TX | PA12 | CAN1 |
-| CAN1_RX | PA11 | CAN1 |
-| PWM (电机 H 桥) | PA8 | TIM1_CH1 |
-| DIR (方向) | PA4 | GPIO |
-| EN (使能) | PB0 | GPIO |
-| Encoder A | PA0 | TIM2_CH1 |
-| Encoder B | PA1 | TIM2_CH2 |
-| LED_RUN | PC13 | GPIO |
-| LED_FAULT | PB1 | GPIO |
-| KEY_LOCAL | PB2 | GPIO |
-| USART1_TX | PA9 | USART1 |
-| USART1_RX | PA10 | USART1 |
+| 功能 | 引脚 | 外设 | 实现状态 |
+|---|---|---|---|
+| CAN1_TX | PA12 | CAN1 | 已实现 |
+| CAN1_RX | PA11 | CAN1 | 已实现 |
+| PWM (电机 H 桥) | PA8 | TIM1_CH1 | 待实现 |
+| DIR (方向) | PA4 | GPIO | 待实现 |
+| EN (使能) | PB0 | GPIO | 待实现 |
+| Encoder A | PA0 | TIM2_CH1 | 待实现 |
+| Encoder B | PA1 | TIM2_CH2 | 待实现 |
+| LED_RUN | PC13 | GPIO | 待实现 |
+| LED_FAULT | PB1 | GPIO | 待实现 |
+| KEY_LOCAL | PB2 | GPIO | 待实现 |
+| USART1_TX | PA9 | USART1 | 待实现 |
+| USART1_RX | PA10 | USART1 | 待实现 |
 
 ## CAN 协议（须与显示域对齐）
 
-CAN ID 编码规范参见 `../display_ecu_f429/protocol/CAN_Protocol.h`，该文件定义了：
-- 29 位扩展帧 ID 位域划分（优先级/源地址/目标地址/帧类型/mode_id/功能字段）
-- `CAN_ID_BUILD` / `CAN_ID_GET_*` 宏、`CanProto_EncodeId/DecodeId` 编解码函数
+CAN ID 位域定义参见 `./protocol/CAN_Protocol.h`：
+- 29 位扩展帧：`[28:26]prio [25:22]src [21:18]dst [17:16]ftype [15:6]mode [5:0]func`
 - 设备地址：`CAN_ADDR_MAINBOARD=0x01`, `CAN_ADDR_MOTORBOARD=0x02`
-- Mode ID 表：电机控制(0x020)、电机状态(0x110)、心跳(0x320) 等
+- `CAN_SELF_ADDR` 已正确设为 `CAN_ADDR_MOTORBOARD`（不要再改回 MAINBOARD）
 
 **本 ECU 需实现的帧**：
 
 | 方向 | Mode ID | 周期 | 说明 |
 |---|---|---|---|
 | 发送 | 0x110 (STATUS_MOTOR) | 20ms | 当前转速、电流、编码器角度 |
-| 发送 | 0x101 (ALERT) / 自定 | 按需 | 故障诊断信息（堵转、丢编码器、CAN 超时） |
+| 发送 | 0x101 (ALERT) / 自定 | 按需 | 故障诊断信息 |
 | 发送 | 0x320 (HEARTBEAT) | 500ms | 心跳帧 |
-| 接收 | 0x020 (CTRL_LF) 等 | 50ms | 来自显示域的电机控制指令（目标转速/电流） |
+| 接收 | 0x020 (CTRL_LF) 等 | 50ms | 来自显示域的电机控制指令 |
 
 ## 现有可用组件
 
@@ -93,8 +83,6 @@ Queue_Get(&q, &msg);    // 出队（空则 false）
 Queue_Query(&q, &msg);  // 只读队首
 ```
 
-纯 C 实现，无 RTOS 依赖，`front == rear` 区分空/满。
-
 ### 2. 延时函数 (`System/Delay.c`)
 
 ```c
@@ -103,33 +91,49 @@ Delay_ms(x);   // 毫秒延时
 Delay_s(x);    // 秒延时
 ```
 
-基于 SysTick 硬件计数器轮询（非中断）。注意：会覆盖 SysTick 寄存器，如果后续需要 SysTick 中断作时基，需改用别的定时器。
+**注意**：会直接操作 SysTick 寄存器，而 sysclock.c 使用 SysTick 中断作时基，两者不可同时使用。当前主循环使用 `tpf` 周期标志调度，不需要 Delay。
 
-## 开发优先级
+### 3. 周期调度 (`System/sysclock.c`)
 
-1. **`driver/drv_can.c`** — CAN 外设初始化、滤波器配置（500kbps, 29-bit ext）、收发函数。这是所有通信的基础
-2. **`driver/drv_usart.c`** — 串口日志输出（调试必备）
-3. **`User/main.c`** — 主循环框架：初始化外设 → 进入循环调度
-4. **`task/task_motor_ctl.c`** — PWM 输出（TIM1_CH1, PA8）+ 编码器读取（TIM2_CH1/CH2, Encoder Mode）+ PID 闭环
-5. **`task/task_comm_can.c`** — CAN 协议打包/解析，对接显示域的 `CAN_Protocol.h` 定义，组装 0x110/0x320 帧，解析 0x020 帧
-6. **故障保护** — IWDG（1s）、堵转检测（500ms 无编码器变化）、编码器丢失检测（100ms）、CAN 超时自动停机（200ms 未收到指令）
+基于 SysTick 中断，提供 8 个周期的标志位：
+
+| 周期 | 标志位 | 主循环中使用 |
+|---|---|---|
+| 1ms | `tpf.task_period_1ms` | — |
+| 5ms | `tpf.task_period_5ms` | `Task_Motor_Ctl()` |
+| 10ms | `tpf.task_period_10ms` | CAN TX/RX |
+| 20ms | `tpf.task_period_20ms` | UART TX/RX |
+| 100ms | `tpf.task_period_100ms` | — |
+| 200ms | `tpf.task_period_200ms` | — |
+| 500ms | `tpf.task_period_500ms` | —（心跳帧） |
+| 1000ms | `tpf.task_period_1000ms` | — |
+
+### 4. CAN 中断与处理函数
+
+| 中断源 | 向量名 | 处理函数 | 文件 |
+|---|---|---|---|
+| CAN RX0 (FIFO0) | `USB_LP_CAN1_RX0_IRQHandler` | `USB_LP_CAN1_RX0_IRQHandler` | `driver/drv_can.c` |
+| CAN SCE | `CAN1_SCE_IRQHandler` | `CAN1_SCE_IRQHandler` | `driver/drv_can.c` |
+| SysTick | `SysTick_Handler` | `SysTick_Handler` → `SysClock_Cb()` | `System/sysclock.c` |
 
 ## 与显示域 ECU 的依赖关系
 
 - 两个 ECU 通过 CAN 总线耦合，**CAN 协议 ID 位域定义必须一致**
-- 建议本工程引用或拷贝 `../display_ecu_f429/protocol/CAN_Protocol.h` 中的宏和类型定义（纯 C 的 `.h`，无 F4 依赖，可直接复用）
-- `CAN_Protocol.h` 中 `CAN_SELF_ADDR` 当前定义为 `CAN_ADDR_MAINBOARD`，本 ECU 需改为 `CAN_ADDR_MOTORBOARD`
+- `protocol/CAN_Protocol.h` 是显示域 `CAN_Protocol.h` 的本地拷贝（纯 C，无 F4 依赖）
+- `CAN_SELF_ADDR = CAN_ADDR_MOTORBOARD` 已经正确设置
 
 ## 资源约束
 
-- **Flash 仅 64KB**（`0x08000000` 起始），含 SPL 库后剩余约 40KB 用于业务代码
+- **Flash 仅 64KB**（`0x08000000` 起始），含 SPL 库后剩余约 40KB
 - **RAM 仅 20KB**（`0x20000000` 起始），需注意堆栈分配
-- 编译器优化等级当前为 1，如果 Flash 不够可调至 2 或 3
-- SPL 的 USE_FULL_ASSERT 当前已禁用（节省 Flash）
+- 编译器优化等级 1，Flash 不够时可调至 2 或 3
+- SPL 的 USE_FULL_ASSERT 已禁用（节省 Flash）
 
 ## 编码约定
 
-- 初始化在 `main.c` 中完成（非 RTOS 环境，不用任务）
-- 主循环轮询或定时器中断驱动，不用 RTOS 延时阻塞
-- CAN 接收用中断 FIFO + 环形队列缓冲，收到后消费
-- 故障处理统一用状态机，不随地散落 `while(1);`\n- 驱动层前缀 `BSP_`（如 `BSP_CAN_Init`），任务层前缀 `Task_` 或 `Mod_`
+- 初始化在 `main.c` 中完成
+- 主循环轮询 + SysTick 中断驱动，不用阻塞延时
+- CAN 接收用中断 FIFO + 环形队列缓冲
+- 故障处理统一用状态机
+- 驱动层前缀 `drv_`，模块层前缀 `Mod_`，任务层前缀 `Task_`
+- 注释使用中文，UTF-8 编码
