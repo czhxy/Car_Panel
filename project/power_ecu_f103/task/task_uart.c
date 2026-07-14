@@ -2,7 +2,8 @@
 
 void Task_Uart_Init(void)
 {
-
+	/* 真正初始化 USART1：drv_usart_init() + 注册接收回调（链路验证用 TX 打印） */
+	Mod_Usart_Init();
 }
 
 void Task_Uart_Rx(void)

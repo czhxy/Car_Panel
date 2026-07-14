@@ -1,59 +1,79 @@
 #include "drv_usart.h"
-usart_rx_callback usart_rx_cb = NULL ;
+
+usart_rx_callback usart_rx_cb = NULL;
 
 void usart_rx_cb_register(usart_rx_callback cb)
 {
 	usart_rx_cb = cb;
 }
 
-
+/* USART1 åˆå§‹åŒ–ï¼šPA9=TX(å¤ç”¨æ¨æŒ½), PA10=RX(ä¸Šæ‹‰è¾“å…¥), 115200 8N1
+ * è¯´æ˜ï¼šé“¾è·¯éªŒè¯é˜¶æ®µåªç”¨åˆ° TXï¼ˆæŠŠæ”¶åˆ°çš„ CAN æ•°æ®æ‰“å°å‡ºæ¥ï¼‰ï¼Œæ•…æš‚ä¸ä½¿èƒ½ RX ä¸­æ–­ã€‚
+ *       éœ€è¦ä¸²å£æ¥æ”¶æ—¶ï¼Œåœ¨æ­¤å¤„åŠ  USART_ITConfig(USART1, USART_IT_RXNE, ENABLE)ï¼Œ
+ *       å¹¶åœ¨ USART1_IRQHandler é‡ŒæŠŠ DR è¯»å…¥ç¼“å†²å³å¯ã€‚ */
 void drv_usart_init(void)
 {
-	/*¿ªÆôÊ±ÖÓ*/
-	RCC_APB2PeriphClockCmd(RCC_APB2Periph_USART1, ENABLE);	//¿ªÆôUSART1µÄÊ±ÖÓ
-	RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE);	//¿ªÆôGPIOAµÄÊ±ÖÓ
-	
-	/*GPIO³õÊ¼»¯*/
+	/* æ—¶é’Ÿï¼šUSART1 ä¸ GPIOA å‡æŒ‚ APB2 */
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_USART1, ENABLE);
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE);
+
+	/* GPIOï¼šPA9=TX å¤ç”¨æ¨æŒ½ï¼ŒPA10=RX ä¸Šæ‹‰è¾“å…¥ */
 	GPIO_InitTypeDef GPIO_InitStructure;
 	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP;
 	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_9;
 	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
-	GPIO_Init(GPIOA, &GPIO_InitStructure);	
+	GPIO_Init(GPIOA, &GPIO_InitStructure);
 
 	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IPU;
 	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_10;
-	GPIO_Init(GPIOA, &GPIO_InitStructure);	
-	
-	/*USART³õÊ¼»¯*/
-	USART_InitTypeDef USART_InitStructure;					//¶¨Òå½á¹¹Ìå±äÁ¿
-	USART_InitStructure.USART_BaudRate = 115200;				//²¨ÌØÂÊ
-	USART_InitStructure.USART_HardwareFlowControl = USART_HardwareFlowControl_None;	//Ó²¼şÁ÷¿ØÖÆ£¬²»ĞèÒª
-	USART_InitStructure.USART_Mode = USART_Mode_Tx|USART_Mode_Tx;			
-	USART_InitStructure.USART_Parity = USART_Parity_No;		//ÆæÅ¼Ğ£Ñé£¬²»ĞèÒª
-	USART_InitStructure.USART_StopBits = USART_StopBits_1;	//Í£Ö¹Î»£¬Ñ¡Ôñ1Î»
-	USART_InitStructure.USART_WordLength = USART_WordLength_8b;		//×Ö³¤£¬Ñ¡Ôñ8Î»
-	USART_Init(USART1, &USART_InitStructure);				//½«½á¹¹Ìå±äÁ¿½»¸øUSART_Init£¬ÅäÖÃUSART1
-	
-	NVIC_PriorityGroupConfig(NVIC_PriorityGroup_4);	
+	GPIO_Init(GPIOA, &GPIO_InitStructure);
+
+	/* USARTï¼š115200, 8N1, æ— æµæ§, æ”¶å‘éƒ½ä½¿èƒ½
+	 * ï¼ˆåŸä»£ç æ­¤å¤„å†™æˆ Tx|Tx æ¼äº† Rxï¼Œå·²ä¿®æ­£ä¸º Tx|Rxï¼‰ */
+	USART_InitTypeDef USART_InitStructure;
+	USART_InitStructure.USART_BaudRate = 115200;
+	USART_InitStructure.USART_HardwareFlowControl = USART_HardwareFlowControl_None;
+	USART_InitStructure.USART_Mode = USART_Mode_Tx | USART_Mode_Rx;
+	USART_InitStructure.USART_Parity = USART_Parity_No;
+	USART_InitStructure.USART_StopBits = USART_StopBits_1;
+	USART_InitStructure.USART_WordLength = USART_WordLength_8b;
+	USART_Init(USART1, &USART_InitStructure);
+
+	/* NVICï¼šUSART1 ä¸­æ–­é€šé“ï¼ˆå½“å‰æœªä½¿èƒ½ RX ä¸­æ–­æºï¼Œæ•…ä¸ä¼šè§¦å‘ï¼Œä»…é¢„ç•™ï¼‰ */
+	NVIC_PriorityGroupConfig(NVIC_PriorityGroup_4);
 	NVIC_InitTypeDef NVIC_InitStructure;
 	NVIC_InitStructure.NVIC_IRQChannel = USART1_IRQn;
 	NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
 	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 3;
 	NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;
-	
 	NVIC_Init(&NVIC_InitStructure);
-	/*USARTÊ¹ÄÜ*/
-	USART_Cmd(USART1, ENABLE);								//Ê¹ÄÜUSART1£¬´®¿Ú¿ªÊ¼ÔËĞĞ
+
+	USART_Cmd(USART1, ENABLE);
 }
 
+/* USART1 ä¸­æ–­ï¼šå½“å‰æœªä½¿èƒ½ä»»ä½•ä¸­æ–­æºï¼Œæœ¬å‡½æ•°å®é™…ä¸ä¼šè¿›å…¥ï¼Œé¢„ç•™é¿å…å‘é‡é»˜è®¤æŒ‚æ­» */
 void USART1_IRQHandler(void)
-{	
-	if (USART_GetITStatus(USART1, USART_IT_IDLE) == SET)		//ÅĞ¶ÏÊÇ·ñÊÇUSART1µÄ¿ÕÏĞÊÂ¼ş´¥·¢µÄÖĞ¶Ï
+{
+	if (USART_GetITStatus(USART1, USART_IT_IDLE) != RESET)
 	{
-		if(usart_rx_cb!=NULL)
-		{
-			usart_rx_cb();
-		}
-		USART_ClearITPendingBit(USART1, USART_IT_IDLE);
+		(void)USART1->SR;            /* è¯» SR å†è¯» DR æ¸… IDLE */
+		(void)USART1->DR;
 	}
+}
+
+/* ===== TXï¼šè½®è¯¢å‘é€ï¼ˆé“¾è·¯éªŒè¯æ‰“å°ç”¨ï¼Œä»¿æ˜¾ç¤ºåŸŸ fputc è½®è¯¢ TXEï¼‰===== */
+void Usart_SendByte(uint8_t b)
+{
+	while (USART_GetFlagStatus(USART1, USART_FLAG_TXE) == RESET);
+	USART_SendData(USART1, b);
+}
+
+void Usart_SendData(const uint8_t *p, uint16_t n)
+{
+	while (n--) Usart_SendByte(*p++);
+}
+
+void Usart_SendString(const char *s)
+{
+	while (*s) Usart_SendByte((uint8_t)*s++);
 }

@@ -15,6 +15,8 @@
 #include "boot_config.h"   /* M3: 地址常量单一来源（FLASH_BASE_ADDR / APP_A_ADDR / APP_B_ADDR） */
 #include "usart.h"
 #include "bsp_log.h"
+#include "task_comm_can_protocol.h"   /* 链路测试：UART 字节透传到 CAN(0x080) */
+#include "CAN_Protocol.h"             /* CAN_PRIO_* / CAN_ADDR_* / MODE_ID_* 常量 */
 #include <string.h>
 
 // ======================== Protocol constants ========================
@@ -94,6 +96,11 @@ void UART_Query_Task(void *pvParameters)
 
     uint8_t state = 0;  // 0=wait HEADER1, 1=wait HEADER2, 2=wait TYPE
 
+    /* 链路测试脚手架：把串口收到的每个字节透传到动力域(CAN, mode 0x080)。
+     * 累计进 fwd，满 8 字节或本轮 burst 结束就发一帧；chip-info 命令解析照常保留。 */
+    uint8_t fwd[8];
+    uint8_t fwd_len = 0;
+
     while (1)
     {
         // Burst read from interrupt ring buffer
@@ -116,6 +123,23 @@ void UART_Query_Task(void *pvParameters)
                 state = 0;
                 break;
             }
+
+            /* 透传：累计字节，满 8 就发一帧 CAN 到动力域 */
+            fwd[fwd_len++] = (uint8_t)ch;
+            if (fwd_len >= 8) {
+                CanProto_SendFrame(CAN_PRIO_QUERY_REPLY, CAN_ADDR_MOTORBOARD,
+                                   CAN_FTYPE_NORMAL, MODE_ID_QUERY_FAST, 0,
+                                   fwd, fwd_len);
+                fwd_len = 0;
+            }
+        }
+
+        /* burst 结束：不足 8 字节的剩余也发出去 */
+        if (fwd_len > 0) {
+            CanProto_SendFrame(CAN_PRIO_QUERY_REPLY, CAN_ADDR_MOTORBOARD,
+                               CAN_FTYPE_NORMAL, MODE_ID_QUERY_FAST, 0,
+                               fwd, fwd_len);
+            fwd_len = 0;
         }
 
         vTaskDelay(pdMS_TO_TICKS(10));

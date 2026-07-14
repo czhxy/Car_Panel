@@ -31,6 +31,7 @@ void Sysclock_Init(void);
 void sys_delay_ms(uint32_t ms);
 void sys_delay_us(uint32_t us);
 void SysClock_Cb(void);
+uint64_t sysclock_get_ms(void);   /* 系统启动以来的毫秒数（基于 SysTick） */
 
 
 #endif

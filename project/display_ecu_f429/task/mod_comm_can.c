@@ -108,6 +108,12 @@ void ModCommCan_PrintRxFrame(const CanRxMsg *rx_msg)
 WEAK void ModCommCan_OnRxFrame(const CanRxMsg *rx_msg)
 {
     ModCommCan_PrintRxFrame(rx_msg);
+
+    /* 心跳帧特别标识一下，方便确认动力域->显示域链路通断 */
+    if ((rx_msg->IDE == CAN_ID_EXT) &&
+        (CAN_ID_GET_MODE(rx_msg->ExtId) == MODE_ID_HEARTBEAT)) {
+        LOG_I("[HB] << heartbeat from motorboard >>\r\n");
+    }
 }
 
 /* ============================================================
