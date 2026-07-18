@@ -11,7 +11,7 @@
 
 /* 电机数据中枢：RX(控制帧)写目标值，drv_motor 以后填实测值，TX(状态/心跳)读 */
 typedef struct motor_struct_type{
-	/* 来自显示域控制帧 0x020 的目标值（RX 解析写入，×10 编码省去浮点） */
+	/* 来自显示域控制帧的目标值（RX 解析写入，×10 编码省去浮点） */
 	int16_t  target_speed_enc;    /* 目标转速 rpm×10 */
 	int16_t  target_angle_enc;    /* 目标角度 °×10 */
 	/* 实测值（drv_motor/编码器以后填充，当前为 0） */
@@ -26,7 +26,11 @@ typedef struct motor_struct_type{
 	uint8_t  flag;                /* 通用标志位 */
 }Motor_Struct;
 
-extern Motor_Struct motor;        /* 全局唯一电机状态实例（Mod_Motor.c 定义） */
+extern Motor_Struct motor_left;   /* 左电机状态（Mod_Motor.c 定义） */
+extern Motor_Struct motor_right;  /* 右电机状态（Mod_Motor.c 定义） */
+#define motor motor_left          /* 向后兼容：旧代码中的 motor 即左电机 */
+
 void Mod_Motor_Init(void);
+void Mod_Motor_Update(void);       /* 周期调用 drv_motor_update，更新左右实测值 */
 
 #endif

@@ -39,20 +39,37 @@ CAN 通信基础设施已完整实现并修复（TX/RX 双队列、中断接收�
 
 ## 硬件引脚分配
 
+### 左电机
+
+| 功能 | 引脚 | 外设 | 实现状态 |
+|---|---|---|---|
+| PWM (H 桥) | PA8 | TIM1_CH1 | 已实现 |
+| DIR (方向) | PA4 | GPIO | 已实现 |
+| EN (使能) | PB0 | GPIO | 已实现 |
+| Encoder A | PA0 | TIM2_CH1 | 已实现 |
+| Encoder B | PA1 | TIM2_CH2 | 已实现 |
+
+### 右电机
+
+| 功能 | 引脚 | 外设 | 实现状态 |
+|---|---|---|---|
+| PWM (H 桥) | PB8 | TIM4_CH3 | 已实现 |
+| DIR (方向) | PB9 | GPIO | 已实现 |
+| EN (使能) | PA5 | GPIO | 已实现 |
+| Encoder A | PA6 | TIM3_CH1 | 已实现 |
+| Encoder B | PA7 | TIM3_CH2 | 已实现 |
+
+### 其他外设
+
 | 功能 | 引脚 | 外设 | 实现状态 |
 |---|---|---|---|
 | CAN1_TX | PA12 | CAN1 | 已实现 |
 | CAN1_RX | PA11 | CAN1 | 已实现 |
-| PWM (电机 H 桥) | PA8 | TIM1_CH1 | 待实现 |
-| DIR (方向) | PA4 | GPIO | 待实现 |
-| EN (使能) | PB0 | GPIO | 待实现 |
-| Encoder A | PA0 | TIM2_CH1 | 待实现 |
-| Encoder B | PA1 | TIM2_CH2 | 待实现 |
 | LED_RUN | PC13 | GPIO | 待实现 |
 | LED_FAULT | PB1 | GPIO | 待实现 |
 | KEY_LOCAL | PB2 | GPIO | 待实现 |
-| USART1_TX | PA9 | USART1 | 待实现 |
-| USART1_RX | PA10 | USART1 | 待实现 |
+| USART1_TX | PA9 | USART1 | 已实现 |
+| USART1_RX | PA10 | USART1 | 已实现 |
 
 ## CAN 协议（须与显示域对齐）
 
@@ -65,10 +82,12 @@ CAN ID 位域定义参见 `./protocol/CAN_Protocol.h`：
 
 | 方向 | Mode ID | 周期 | 说明 |
 |---|---|---|---|
-| 发送 | 0x110 (STATUS_MOTOR) | 20ms | 当前转速、电流、编码器角度 |
+| 发送 | 0x110 (STATUS_MOTOR) func=0x00 | 20ms | 左电机状态：转速、电流、编码器角度 |
+| 发送 | 0x110 (STATUS_MOTOR) func=0x01 | 20ms | 右电机状态：转速、电流、编码器角度 |
 | 发送 | 0x101 (ALERT) / 自定 | 按需 | 故障诊断信息 |
 | 发送 | 0x320 (HEARTBEAT) | 500ms | 心跳帧 |
-| 接收 | 0x020 (CTRL_LF) 等 | 50ms | 来自显示域的电机控制指令 |
+| 接收 | 0x020 (CTRL_LF) | 50ms | 左电机控制指令 |
+| 接收 | 0x021 (CTRL_RF) | 50ms | 右电机控制指令 |
 
 ## 现有可用组件
 

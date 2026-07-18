@@ -18,9 +18,9 @@
 | LED 驱动 | 100% | `app/bsp_led.c/h` | 4 路 GPIO 输出 |
 | UART 查询服务 | 100% | `task/task_query.c/h` | `0xAA 0x55` 协议，芯片信息/VTOR 自证槽位查询 |
 | 电机传感器驱动 | 5% | `driver/mod_motor.c/h` | 仅占位函数（返回 0.0f） |
-| LTDC LCD 驱动 | 0% | `app/bsp_lcd.c`（待建） | 未创建 |
+| SPI LCD 驱动 (ILI9341V) | 0% | `app/bsp_spi_lcd.c/h`（待建） | SPI2 4 线接口，240×320 RGB565 |
+| I2C 触摸驱动 (FT6336G) | 0% | `app/bsp_i2c_touch.c/h`（待建） | I2C1 400kHz，2 点触摸 |
 | LVGL 仪表盘 UI | 0% | `task/task_display.c`（待建） | 未创建 |
-| SPI Flash OTA | 0% | （待建） | 未创建 |
 
 ---
 
@@ -93,21 +93,24 @@
 
 ## 下一步待做工作（按优先级）
 
-### P0 — LTDC RGB LCD 驱动（`app/bsp_lcd.c`）
+### P0 — SPI LCD + I2C 触摸驱动
 
-点亮屏幕是所有后续 UI 工作的前提：
+点亮屏幕是所有后续 UI 工作的前提。方案已从 LTDC 改为 SPI 2.8 寸触摸屏（MSP2834）：
 
-- F429 板载 TFT 屏，ILITEK 控制 IC，RGB 565 接口
-- 需要配置：LTDC 时序（H/V sync/back porch/active）、像素格式 RGB565、两层 Layer（背景+前景）
-- 配置 DMA2D 加速填充/搬运（可后续优化）
-- GPIO 复用为 LTDC 引脚（大组 GPIO，注意引脚锁）
+- **LCD**：ILI9341V，SPI2（PB13=SCK / PB15=MOSI / PB14=MISO / PB12=CS / PB10=DC / PB11=RST），240×320 RGB565
+- **触摸**：FT6336G，I2C1（PB6=SCL / PB7=SDA / PB8=INT / PB9=RST），地址 0x38
+- **背光**：PB0 高电平点亮（模块 N-MOSFET 驱动，高=ON）
+- SPI 模式 0（CPHA=0, CPOL=0），MSB 优先
+- 需创建 `app/bsp_spi_lcd.c/h` + `app/bsp_i2c_touch.c/h`
+- 详细方案见 `docs/spi_touch_screen_plan.md`
 
 ### P1 — LVGL 仪表盘 UI（`task/task_display.c`）
 
-依赖 LCD 驱动完成：
+依赖 P0 LCD/触摸驱动完成：
 
+- LVGL v8.x 移植：双缓冲（2×240×30×2 = 28.8KB 主 SRAM）、SPI flush 回调、FT6336G indev 回调
 - 仪表盘界面渲染（速度表盘、方向指示灯、电量/油量等）
-- 创建 LVGL 渲染任务（单独 FreeRTOS 任务，建议优先级低于 CAN 任务）
+- 创建 LVGL 渲染任务（单独 FreeRTOS 任务，优先级 2，5ms 周期）
 - 数据驱动：将 CAN 接收到的电机状态映射到 LVGL 控件
 
 ### P2 — 电机传感器真实数据接入
@@ -129,12 +132,6 @@
 当前全通（掩码=0），需要按源地址过滤：
 - 只接收来自 `CAN_ADDR_MOTORBOARD` (0x02) 的帧
 - 减少中断负载
-
-### P5 — SPI Flash OTA
-
-- W25Q64 SPI Flash 驱动
-- 通过 SPI Flash 存储固件包实现 OTA
-- `app/bsp_spi_flash.c`
 
 ---
 

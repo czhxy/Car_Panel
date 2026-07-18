@@ -37,12 +37,23 @@ void TaskCanMotor_RxCallback(CanRxMsg motor_pack)
 			if (motor_pack.DLC >= 4)
 			{
 				/* 显示域实际线序(小端): data[0..1]=speed(rpm×10), data[2..3]=angle(°×10) */
-				motor.target_speed_enc = (int16_t)((uint16_t)motor_pack.Data[0]
-				                                 | ((uint16_t)motor_pack.Data[1] << 8));
-				motor.target_angle_enc = (int16_t)((uint16_t)motor_pack.Data[2]
-				                                 | ((uint16_t)motor_pack.Data[3] << 8));
-				motor.rx_ctrl_count++;
-				motor.last_ctrl_ms = (uint32_t)sysclock_get_ms();
+				motor_left.target_speed_enc = (int16_t)((uint16_t)motor_pack.Data[0]
+				                                      | ((uint16_t)motor_pack.Data[1] << 8));
+				motor_left.target_angle_enc = (int16_t)((uint16_t)motor_pack.Data[2]
+				                                      | ((uint16_t)motor_pack.Data[3] << 8));
+				motor_left.rx_ctrl_count++;
+				motor_left.last_ctrl_ms = (uint32_t)sysclock_get_ms();
+			}
+			break;
+		case MODE_ID_CTRL_RF:   /* 0x021 右前轮转向+轮毂控制（显示域→动力域） */
+			if (motor_pack.DLC >= 4)
+			{
+				motor_right.target_speed_enc = (int16_t)((uint16_t)motor_pack.Data[0]
+				                                       | ((uint16_t)motor_pack.Data[1] << 8));
+				motor_right.target_angle_enc = (int16_t)((uint16_t)motor_pack.Data[2]
+				                                       | ((uint16_t)motor_pack.Data[3] << 8));
+				motor_right.rx_ctrl_count++;
+				motor_right.last_ctrl_ms = (uint32_t)sysclock_get_ms();
 			}
 			break;
 		case MODE_ID_QUERY_FAST:   /* 0x080 链路测试：回显显示域串口透传过来的数据（测试脚手架） */
@@ -69,9 +80,9 @@ void Task_Can_Heartbeat_Updata(void)
 	memset(&tx, 0, sizeof(tx));
 	memset(&hb, 0, sizeof(hb));
 
-	hb.status     = motor.status;
+	hb.status     = motor_left.status | motor_right.status;
 	hb.uptime     = (uint16_t)(sysclock_get_ms() / 1000U);
-	hb.error_code = motor.error_code;
+	hb.error_code = motor_left.error_code | motor_right.error_code;
 
 	tx.ExtId = CAN_ID_BUILD(CAN_PRIO_HEARTBEAT, CAN_SELF_ADDR, CAN_ADDR_BROADCAST,
 	                        CAN_FTYPE_NORMAL, MODE_ID_HEARTBEAT, 0x00U);
