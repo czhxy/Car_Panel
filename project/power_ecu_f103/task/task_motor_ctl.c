@@ -9,10 +9,13 @@ void Task_Motor_Ctl(void)
 {
 	/* 每 5ms 刷新左右编码器实测值，写入 motor_left/motor_right 全局结构体 */
 	Mod_Motor_Update();
+	
+	//根据显示域下发的值对电机进行操控，目前先实现对转速的稳定操控，使用pid
+	Mod_Motor_Process();
 }
 
 /** 组装并发送单电机状态帧 0x110 */
-static void motor_send_status(Motor_Struct *m, uint8_t func_field)
+static void Motor_Can_Tx_Event(Motor_Struct *m, uint8_t func_field)
 {
 	CanTxMsg tx;
 	CanStatusMotor st;
@@ -40,6 +43,6 @@ void Task_Can_Motor_Updata(void)
 {
 	/* ===== TX 电机状态帧 0x110（10ms）=====
 	 * func_field 区分电机：0x00=左, 0x01=右 */
-	motor_send_status(&motor_left,  0x00U);
-	motor_send_status(&motor_right, 0x01U);
+	Motor_Can_Tx_Event(&motor_left,  0x00U);
+	Motor_Can_Tx_Event(&motor_right, 0x01U);
 }

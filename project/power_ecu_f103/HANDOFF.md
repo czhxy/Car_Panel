@@ -88,6 +88,22 @@ RX 路径（硬件→业务）：
 - `motor_left`/`motor_right` 两个独立 `Motor_Struct` 实例，`motor` 宏仍指向 `motor_left`（向后兼容）
 - `Mod_Motor_Update()` 每 5ms 依次更新左右编码器实测值
 
+### 6. PID 转速闭环控制 `[未验证]`
+
+- **位置式 PID + 积分抗饱和**：`pid.h/c` 实现通用 `PidController` 结构体和 `Pid_Init`/`Pid_Compute`/`Pid_Reset` 接口
+- **双电机独立 PID**：`Mod_Motor.c` 中定义 `static PidController pid_left`/`pid_right` 全局实例
+- **控制周期**：5ms（与编码器更新同频），`Mod_Motor_Process()` 由 `Task_Motor_Ctl()` 调用
+- **停机策略**：`target_speed_enc == 0` → 完全关闭电机（`drv_motor_set_enable(0)` + `Pid_Reset()`），节省功耗、避免零速微振
+- **默认参数**：Kp=2.0, Ki=0.1, Kd=0.5, 输出限幅 ±999（PWM_MAX），需上机实测后微调
+- **积分抗饱和**：`integral_limit = output_max / ki`，防止 PWM 饱和后积分持续增长导致退饱和振荡
+
+数据流：
+```
+CAN RX → target_speed_enc → Pid_Compute(setpoint, feedback) → PWM → 电机
+                                              ↑
+                  encoder → drv_motor_update → cur_speed_enc
+```
+
 ### 5. UART 驱动完善 `[未验证]`
 
 - `USART_Mode` 从 `Tx|Tx` 修正为 `Tx|Rx`
@@ -116,6 +132,7 @@ RX 路径（硬件→业务）：
 | 串口模块 | `Mod/Mod_Usart.c` | 空壳 | — |
 | 串口任务 | `task/task_uart.c` | 框架 | — |
 | 环形队列 | `component/queue/queue.c` | 完成 | 已验证 |
+| PID 控制器 | `component/pid/pid.c` | 完成 | 未验证 |
 | 延时 | `System/Delay.c` | 可用 | 已验证 |
 
 ### 当前编译状态
@@ -141,12 +158,13 @@ RX 路径（硬件→业务）：
 5. **SCE 中断注册**：使用 `CAN_IT_ERR` 统一使能错误中断（非 EWG/EPV/BOF 保留位），ABOM 硬件自动 Bus-Off 恢复
 6. **管道-业务分离**：CAN 任务层只负责帧收发（TX 队列消费、RX 队列分派），电机/心跳等实体数据的组帧入队由各自业务任务负责，避免 CAN 任务膨胀
 7. **RX 弱符号回调**：`TaskCanMotor_RxCallback` 在 `Mod_Comm_Can.c` 中声明为 weak，`task_comm_can.c` 提供强实现，实现 CAN 模块与电机模块解耦
+8. **双电机独立 PID**：左右电机各一个 `PidController` 全局实例，5ms 周期计算，输出直接驱动 PWM。停机时（target=0）彻底关闭电机+复位 PID 防止积分残留
 
 ---
 
 ## 下一步待做工作（按优先级）
 
-### P0 — 电机驱动实现 `[已实现 未验证]`
+### P0 — 电机驱动实现 `[已实现 未验证]` + PID 闭环 `[已实现 未验证]`
 
 | 信号 | 左电机 | 外设 | 右电机 | 外设 |
 |---|---|---|---|---|
@@ -291,7 +309,7 @@ RX 路径（硬件→业务）：
 
 | 周期 | 标志位 | 执行的任务 |
 |---|---|---|
-| 5ms | `tpf.task_period_5ms` | `Task_Motor_Ctl()` — 刷新左右编码器实测值 |
+| 5ms | `tpf.task_period_5ms` | `Task_Motor_Ctl()` — 刷新左右编码器实测值 + PID 转速闭环控制 |
 | 10ms | `tpf.task_period_10ms` | `Task_Comm_Rx_Can()`, `Task_Comm_Tx_Can()`, `Task_Can_Motor_Updata()` — 左右电机状态帧各一(0x110) |
 | 20ms | `tpf.task_period_20ms` | `Task_Uart_Tx()`, `Task_Uart_Rx()` |
 | 500ms | `tpf.task_period_500ms` | `Task_Can_Heartbeat_Updata()` (0x320 心跳帧) |

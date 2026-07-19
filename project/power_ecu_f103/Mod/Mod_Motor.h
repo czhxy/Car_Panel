@@ -3,7 +3,7 @@
 
 #include "stm32f10x.h"                  // Device header
 #include "drv_motor.h"
-
+#include "pid.h"
 /* 电机运行状态位（status 字段按位组合） */
 #define MOTOR_STATUS_RUN     0x01u   /* 运行中 */
 #define MOTOR_STATUS_ENABLE  0x02u   /* 已使能 */
@@ -32,5 +32,5 @@ extern Motor_Struct motor_right;  /* 右电机状态（Mod_Motor.c 定义） */
 
 void Mod_Motor_Init(void);
 void Mod_Motor_Update(void);       /* 周期调用 drv_motor_update，更新左右实测值 */
-
+void Mod_Motor_Process(void);
 #endif

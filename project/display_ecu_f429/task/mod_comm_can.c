@@ -221,8 +221,6 @@ void Mod_Can_TxTest(void)
     for (i = 0; i < frame.dlc; i++) {
         LOG_I(" %02X", frame.data[i]);
     }
-
-
     Mod_Can_TxEvent(&frame);
 }
 void Can_Heartbeat(void)
