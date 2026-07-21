@@ -8,19 +8,13 @@ static sysclock_callback sysclock_cb = NULL;
 #define TICKS_PER_US    (SystemCoreClock / 1000000)
 
 TaskPeriod_t tp;
-TaskPeriodFlag_t tpf;
+volatile TaskPeriodFlag_t tpf;
 void sysclock_callback_register(sysclock_callback cb)
 {
 	sysclock_cb = cb;
 }
 void Sysclock_Init(void)
 {
-	SysTick->LOAD = TICKS_PER_MS;
-	SysTick->VAL = 0x00;					
-	SysTick->CTRL = SysTick_CTRL_CLKSOURCE_Msk|SysTick_CTRL_TICKINT_Msk|SysTick_CTRL_ENABLE_Msk;
-	
-	sysclock_callback_register(SysClock_Cb);
-	
 	tp.period_1ms = 0;
 	tp.period_5ms = 0;
 	tp.period_10ms = 0;
@@ -38,15 +32,27 @@ void Sysclock_Init(void)
 	tpf.task_period_200ms = 0;
 	tpf.task_period_500ms = 0;
 	tpf.task_period_1000ms = 0;
+
+	sysclock_callback_register(SysClock_Cb);
+	SysTick->LOAD = TICKS_PER_MS;
+	SysTick->VAL = 0x00;
+	SysTick->CTRL = SysTick_CTRL_CLKSOURCE_Msk |
+					SysTick_CTRL_TICKINT_Msk |
+					SysTick_CTRL_ENABLE_Msk;
 }
 uint64_t sys_tick_now(void)
 {
-	uint64_t now,last;
+	uint64_t base_before, base_after;
+	uint32_t current_value;
+	uint32_t reload;
+
+	reload = SysTick->LOAD;
 	do{
-		last = sys_tick_count;
-		now = sys_tick_count + SysTick->LOAD - SysTick->VAL;
-	}while(last!= now);
-	return now;
+		base_before = sys_tick_count;
+		current_value = SysTick->VAL;
+		base_after = sys_tick_count;
+	}while(base_before != base_after);
+	return base_before + (uint64_t)(reload - current_value);
 }
 uint64_t sysclock_get_us(void)
 {

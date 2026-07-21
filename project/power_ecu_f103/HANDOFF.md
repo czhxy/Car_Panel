@@ -4,7 +4,40 @@
 
 ---
 
-## 本次会话完成工作
+## 最近会话完成工作
+
+### 7. UART 串口控制台 `[已验证]`
+
+**驱动层**（`driver/drv_usart.c/h`）：
+- 回调类型改为 `void(*)(const uint8_t *buf, uint16_t len)` — 带数据传递
+- 新增 `UART_RX_FRAME_SIZE 32` 宏和 ISR 静态缓冲区 `rx_buf[32]` + `rx_idx`
+- ISR 重写：**RXNE**（逐字节累积，满 32 推帧）+ **IDLE**（推不完整帧，`rx_idx>0` 守卫防假 IDLE）
+- 中断使能分离：`drv_usart_init()` 仅初始化硬件 + `USART_Cmd(ENABLE)`，`drv_usart_start_rx()` 延迟使能 RXNE/IDLE 中断（先清悬起标志再使能）
+- TX：`Usart_SendByte/SendData/SendString` 轮询发送（保持不变）
+
+**模块层**（`Mod/Mod_Usart.c/h`）：
+- **RX 队列**：4 帧 `UsartRxFrame`（`data[31]+len`，128 字节），item_size=32
+- **TX 队列**：512 字节，item_size=1（511 字节可用）
+- **ISR→队列**：`Usart_Rx_Event(buf, len)` 构造帧推入 RX 队列，满则 `uart_rx_err_count++`
+- **行缓冲解析**：`Usart_Rx_Process()` 遍历 RX 队列，逐字节回显+累积到 `line_buf[64]`，遇 `\r`/`\n` 调 `Usart_ParseCommand()`
+- **TX 出队**：`Usart_Tx_Process()` Query-Get 模式，每次最多 16 字节（≈1.4ms），`Usart_Tx_Event(data,len)` 推入 TX 队列
+- **命令解析**（`__weak Usart_ParseCommand`）：支持 `echo`（回显消息）、`help`（帮助菜单）、未知命令提示 `?`
+
+**任务层**（`task/task_uart.c`）：
+- `Task_Uart_Rx()` → `Usart_Rx_Process()`，`Task_Uart_Tx()` → `Usart_Tx_Process()`
+
+**测试通过**：USB-TTL 接 PA9/PA10，115200 8N1，`echo hello` → `hello`，`help` → 帮助菜单。
+
+### 8. 周期调度 Bug 修复 `[已验证]`
+
+- **Volatile 修复**：`tpf` 在 `sysclock.h` 和 `sysclock.c` 中加 `volatile` 修饰（ISR 写入/主循环读取，armcc -O1 会缓存寄存器值导致周期标志始终为 0）
+- **冗余声明清理**：`main.h` 移除无 `volatile` 的 `extern TaskPeriodFlag_t tpf;`（与 `sysclock.h` 冲突）
+- **`sys_tick_now()` 一致性 bug**：修复 64-bit 读取竞态，确保 SysTick 时基正确运行
+- **Noinline 保护**：`task_uart.h`、`task_comm_can.h`、`task_motor_ctl.h` 中所有任务函数加 `__attribute__((noinline))`，防止 armcc -O1 尾调用/内联导致调试断点无法解析
+
+---
+
+## 历史会话完成工作
 
 ### 0. 双电机改造（单电机 → 左右双电机）`[未验证]`
 
@@ -128,9 +161,9 @@ CAN RX → target_speed_enc → Pid_Compute(setpoint, feedback) → PWM → 电�
 | 电机模块 | `Mod/Mod_Motor.c/h` | 完成 | 未验证 |
 | 电机任务 | `task/task_motor_ctl.c` | 完成 | 未验证 |
 | 电机驱动 | `driver/drv_motor.c` | 完成 | 未验证 |
-| 串口驱动 | `driver/drv_usart.c` | 完成 | 未验证 |
-| 串口模块 | `Mod/Mod_Usart.c` | 空壳 | — |
-| 串口任务 | `task/task_uart.c` | 框架 | — |
+| 串口驱动 | `driver/drv_usart.c` | 完成 | 已验证 |
+| 串口模块 | `Mod/Mod_Usart.c` | 完成 | 已验证 |
+| 串口任务 | `task/task_uart.c` | 完成 | 已验证 |
 | 环形队列 | `component/queue/queue.c` | 完成 | 已验证 |
 | PID 控制器 | `component/pid/pid.c` | 完成 | 未验证 |
 | 延时 | `System/Delay.c` | 可用 | 已验证 |
@@ -164,7 +197,7 @@ CAN RX → target_speed_enc → Pid_Compute(setpoint, feedback) → PWM → 电�
 
 ## 下一步待做工作（按优先级）
 
-### P0 — 电机驱动实现 `[已实现 未验证]` + PID 闭环 `[已实现 未验证]`
+### P0 — 电机驱动上板验证 `[已实现 待验证]`
 
 | 信号 | 左电机 | 外设 | 右电机 | 外设 |
 |---|---|---|---|---|
@@ -174,25 +207,43 @@ CAN RX → target_speed_enc → Pid_Compute(setpoint, feedback) → PWM → 电�
 | Enc A | PA0 | TIM2_CH1 | PA6 | TIM3_CH1 |
 | Enc B | PA1 | TIM2_CH2 | PA7 | TIM3_CH2 |
 
-- **PWM 频率**：两路均为 20kHz（PSC=3, ARR=899）
-- **编码器**：均为 TI12 4× 边沿计数，1320 脉冲/转
-- 每 5ms `drv_motor_update(motor_id)` 刷新对应电机实测值
-- `cur_current` 暂为 0（无采样电阻），`temperature` 暂为 0
+- **PWM 频率**：两路 20kHz（PSC=3, ARR=899）
+- **编码器**：TI12 4× 边沿计数，1320 脉冲/转
+- 验证方法：
+  1. 在 `Mod_Motor_Update()` 加串口打印 `motor_left.cur_speed_enc`/`motor_right.cur_speed_enc`
+  2. 手动转动电机，确认编码器数值变化
+  3. 通过 UART 控制台发指令（可先在 `Usart_ParseCommand` 扩展 `motor` 命令），手动设 `target_speed_enc` 为非零值，确认 PWM 输出和电机转动
 
-### P1 — 故障保护 `[待实现]`
+### P1 — PID 转速闭环验证 `[已实现 待验证]`
+
+- 左右电机独立 PID，默认 Kp=2.0, Ki=0.1, Kd=0.5
+- 验证方法：手动设定目标转速，通过串口观察 `cur_speed_enc` 是否收敛到 `target_speed_enc`
+- 需要根据实际响应微调 PID 参数
+
+### P2 — CAN 通信上板验证 `[已实现 待验证]`
+
+- 连接显示域 ECU（F429），确认 CAN 收发正常
+- 显示域发 0x020（左）/0x021（右）控制帧 → 动力域接收并写入 `motor_*.target_*`
+- 动力域发 0x110 状态帧（10ms）→ 显示域接收
+- 动力域发 0x320 心跳帧（500ms）→ 显示域接收
+
+### P3 — 命令扩展 `[待实现]`
+
+在 `Usart_ParseCommand()` 中扩展调试命令（弱符号，可在 `task_uart.c` 覆盖）：
+- `motor left <speed>` / `motor right <speed>` — 手动控制左/右电机转速
+- `motor stop` — 紧急停止双电机
+- `status` — 打印当前转速、编码器角度、PID 输出
+- `pid <kp> <ki> <kd>` — 在线调参
+
+### P4 — 故障保护 `[待实现]`
 
 - **IWDG**：1s 超时独立看门狗
-- **CAN 超时停机**：利用 `motor_left.last_ctrl_ms` / `motor_right.last_ctrl_ms` 各 200ms 超时检测
+- **CAN 超时停机**：`motor_left.last_ctrl_ms` / `motor_right.last_ctrl_ms` 各 200ms 超时检测
 - **堵转检测**：500ms 内编码器无变化 → 停机
 - **编码器丢失**：100ms 内无脉冲 → 告警
 - 上述保护均需对左右电机分别实现
 
-### P2 — 串口日志完善 `[待实现]`
-
-- `Mod/Mod_Usart.c`：日志输出接口
-- `task/task_uart.c`：周期性上报调试信息
-
-### P3 — 显示域同步 `[待实现]`
+### P5 — 显示域同步 `[待实现]`
 
 - 将 `CanStatusMotor` 同步到 `display_ecu_f429/protocol/CAN_Protocol.h`
 - 修正显示域心跳 `CAN_HEARTBEAT_ID` 的 mode 0x000 → 0x320
@@ -210,6 +261,9 @@ CAN RX → target_speed_enc → Pid_Compute(setpoint, feedback) → PWM → 电�
 7. **CanCtrlMotor 结构体与线上线序不一致**：显示域实际发送 `[speed, speed, angle, angle, 0, 0, 0, 0x03]`，不要用结构体直接 memcpy 解析，收发请按裸字节处理
 8. **DRV8833 VM 最高 10.8V**，切勿接 12V。编码器 VCC 为 5V，切勿接 7.4V/12V
 9. **Keil 项目**：`drv_motor.c` 在项目文件中配置了 `<FileOption>` 内自定义对象文件名（Keil IDE 自动展开），需保留不做回退
+10. **ISR/主循环共享变量必须加 `volatile`**：`tpf`（在 `sysclock.h/c` 中）由 SysTick_ISR 写入、主循环读取。不加 volatile，armcc -O1 会缓存寄存器值
+11. **UART 中断优先级**：USART1 抢占优先级 3（高于 CAN RX0(5)、CAN SCE(4)、SysTick(15)），可抢占其他中断
+12. **UART RX 架构**：中断累积 → `Usart_Rx_Event(buf,len)`（ISR 上下文）→ RX 队列 → `Usart_Rx_Process()`（20ms 主循环）→ 行缓冲 + 回显 + `Usart_ParseCommand()`。TX 路径：`Usart_Tx_Event(data,len)`（业务层）→ TX 队列 → `Usart_Tx_Process()`（20ms 主循环）→ 轮询发送
 
 ---
 
@@ -304,6 +358,7 @@ CAN RX → target_speed_enc → Pid_Compute(setpoint, feedback) → PWM → 电�
 | CAN RX0 (FIFO0) | `USB_LP_CAN1_RX0_IRQHandler` | `USB_LP_CAN1_RX0_IRQHandler` | `driver/drv_can.c` |
 | CAN SCE | `CAN1_SCE_IRQHandler` | `CAN1_SCE_IRQHandler` | `driver/drv_can.c` |
 | SysTick | `SysTick_Handler` | `SysTick_Handler` → `SysClock_Cb()` | `System/sysclock.c` |
+| USART1 | `USART1_IRQHandler` | `USART1_IRQHandler`（RXNE+IDLE） | `driver/drv_usart.c` |
 
 ### 周期调度表
 
