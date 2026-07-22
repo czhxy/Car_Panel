@@ -4,62 +4,48 @@
 
 ---
 
+## 当前阶段目标
+
+**打通显示域 ↔ 动力域 CAN 通信链路 + 显示域 LVGL 界面。**
+
+电机能转就行（PWM 驱动/编码器读取已实现），不追求转速精度——后期会更换电机。当前重心是让两个 ECU 通过 CAN 正常收发数据。
+
+---
+
 ## 最近会话完成工作
 
-### 7. UART 串口控制台 `[已验证]`
+### 编码器测试与硬件验证 `[已验证]`
 
-**驱动层**（`driver/drv_usart.c/h`）：
-- 回调类型改为 `void(*)(const uint8_t *buf, uint16_t len)` — 带数据传递
-- 新增 `UART_RX_FRAME_SIZE 32` 宏和 ISR 静态缓冲区 `rx_buf[32]` + `rx_idx`
-- ISR 重写：**RXNE**（逐字节累积，满 32 推帧）+ **IDLE**（推不完整帧，`rx_idx>0` 守卫防假 IDLE）
-- 中断使能分离：`drv_usart_init()` 仅初始化硬件 + `USART_Cmd(ENABLE)`，`drv_usart_start_rx()` 延迟使能 RXNE/IDLE 中断（先清悬起标志再使能）
-- TX：`Usart_SendByte/SendData/SendString` 轮询发送（保持不变）
+- **TIM 配置**：`TIM_EncoderMode_TI12`（4× 编码器模式），SMS=3、CCER=0000、CCMR1=0101 均已确认正确
+- **两根电机均已测试**：
+  - 反转时 TIM 正确输出 1040 计数/输出轴圈（=13PPR×4×20 减速比），4× 编码器工作正常
+  - 正转时因电机为蜗轮蜗杆减速、具有单向自锁特性，手动拧输出轴时编码器几乎不动（约 260 计数/圈）
+- **结论**：软件 4× 编码器配置没有问题，不对称计数是当前电机的机械特性导致
+- ENC_CPR 当前设为 260（实测有效值），换电机后改为 1040
 
-**模块层**（`Mod/Mod_Usart.c/h`）：
-- **RX 队列**：4 帧 `UsartRxFrame`（`data[31]+len`，128 字节），item_size=32
-- **TX 队列**：512 字节，item_size=1（511 字节可用）
-- **ISR→队列**：`Usart_Rx_Event(buf, len)` 构造帧推入 RX 队列，满则 `uart_rx_err_count++`
-- **行缓冲解析**：`Usart_Rx_Process()` 遍历 RX 队列，逐字节回显+累积到 `line_buf[64]`，遇 `\r`/`\n` 调 `Usart_ParseCommand()`
-- **TX 出队**：`Usart_Tx_Process()` Query-Get 模式，每次最多 16 字节（≈1.4ms），`Usart_Tx_Event(data,len)` 推入 TX 队列
-- **命令解析**（`__weak Usart_ParseCommand`）：支持 `echo`（回显消息）、`help`（帮助菜单）、未知命令提示 `?`
+### 单 TB6612FNG 适配 `[已完成]`
 
-**任务层**（`task/task_uart.c`）：
-- `Task_Uart_Rx()` → `Usart_Rx_Process()`，`Task_Uart_Tx()` → `Usart_Tx_Process()`
-
-**测试通过**：USB-TTL 接 PA9/PA10，115200 8N1，`echo hello` → `hello`，`help` → 帮助菜单。
-
-### 8. 周期调度 Bug 修复 `[已验证]`
-
-- **Volatile 修复**：`tpf` 在 `sysclock.h` 和 `sysclock.c` 中加 `volatile` 修饰（ISR 写入/主循环读取，armcc -O1 会缓存寄存器值导致周期标志始终为 0）
-- **冗余声明清理**：`main.h` 移除无 `volatile` 的 `extern TaskPeriodFlag_t tpf;`（与 `sysclock.h` 冲突）
-- **`sys_tick_now()` 一致性 bug**：修复 64-bit 读取竞态，确保 SysTick 时基正确运行
-- **Noinline 保护**：`task_uart.h`、`task_comm_can.h`、`task_motor_ctl.h` 中所有任务函数加 `__attribute__((noinline))`，防止 armcc -O1 尾调用/内联导致调试断点无法解析
+- 原设计使用两片 TB6612FNG，实际硬件仅一片
+- STBY 硬接 VCC(5V) 始终使能，AIN2/BIN2 硬接 GND
+- `drv_motor_set_enable()` 改为纯软件启停（PWM=0 刹车）
+- 释放引脚：PB0 (原左 EN)、PA5 (原右 EN)
 
 ---
 
 ## 历史会话完成工作
 
-### 0. 双电机改造（单电机 → 左右双电机）`[未验证]`
+### 0. CAN 驱动层 Bug 修复（drv_can.c）`[未上板验证]`
 
-- **驱动层**：`drv_motor.c/h` 重构，所有函数增加 `motor_id` 参数（`MOTOR_ID_LEFT=0`/`MOTOR_ID_RIGHT=1`）
-- **右电机硬件**：TIM4_CH3 (PB8) PWM + TIM3 (PA6/PA7) 编码器 + PB9 DIR + PA5 EN
-- **模块层**：`motor_left`/`motor_right` 两个独立 `Motor_Struct` 实例，`motor` 宏仍指向 `motor_left`（向后兼容）
-- **CAN 接收**：新增 `MODE_ID_CTRL_RF` (0x021) 解析 → 写入 `motor_right.target_*`
-- **CAN 发送**：0x110 状态帧每 10ms 发两帧——func_field=0x00(左)、func_field=0x01(右)
-- **心跳帧**：status/error_code 取左右电机的 OR 聚合
+| 项目 | 说明 |
+|---|---|
+| PA11 RX 修正为 IPU | 原配置为 AF_PP（推挽输出），与收发器 RXD 冲突 |
+| 波特率 500kbps@36MHz(BS1=9tq) | 采样点≈83.3%，与 F429 对齐 |
+| CAN_ABOM | 自动 Bus-Off 恢复 |
+| 错误中断 `CAN_IT_ERR` | F1 的 EWG/EPV/BOF 无独立使能位 |
+| SCE ISR 简化 | ABOM 已使能，硬件自动恢复 |
+| 回调按值传递 | `can_rx_cb(msg)` 消除指针竞态 |
 
-### 1. CAN 驱动层关键 Bug 修复（drv_can.c）`[未验证]`
-
-- **PA11 RX 脚修正为 IPU 输入**：原配置与 TX 一样设成 AF_PP（推挽输出），输出驱动器与收发器 RXD 冲突，RX 完全失效
-- **波特率修正为 500kbps@36MHz(BS1 9tq)**：原来按 42MHz(BS1 11tq) 计算，实为 428.6kbps，与 F429 对不上
-- **增加 CAN_ABOM**：自动 Bus-Off 恢复，单节点无 ACK 也会触发 BusOff
-- **错误中断改用 `CAN_IT_ERR`**：F1 的 EWG/EPV/BOF 没有独立使能位，`CAN_ITConfig(EWG/EPV/BOF)` 写的是保留位，SCE 中断永远不进
-- **SCE ISR 简化**：ABOM 已使能，硬件自动恢复，软件只需读 ESR、清 ERRIE
-- **回调改为按值传递**：`can_rx_cb(msg)` 传结构体副本，消除指针竞态
-
-### 2. 模块层重构 — TX/RX 职责分离 `[未验证]`
-
-**设计原则**：CAN 任务层只做 CAN 帧的管道操作（RX 从队列取帧→分发给弱符号回调、TX 从队列取帧→推送到硬件邮箱）。电机/心跳等实体数据的组帧和入队动作由对应的业务任务负责。
+### 1. CAN TX/RX 管道-业务分离 `[未上板验证]`
 
 ```
 TX 路径（业务→硬件）：
@@ -77,72 +63,46 @@ RX 路径（硬件→业务）：
                                            ↓
                                    TaskCanMotor_RxCallback(弱符号重写)
                                            ↓
-                          解析 0x020 控制帧 → motor_left.target_*
-                              解析 0x021 控制帧 → motor_right.target_*
-                              解析 0x080 查询帧 → 串口回显
+                          解析 0x020/0x021 控制帧 → motor_*.target_*
 ```
 
-**模块-头文件改进**：
-- `CAN_Protocol.h`：新增 `CanStatusMotor` 结构体（0x110 状态帧载荷），给 `CanCtrlMotor` 加线序警告注释
-- `Mod_Motor.h`：`Motor_Struct` 扩展完整字段（target/cur/status/计数/时间戳），加状态位宏和 `motor_left`/`motor_right` extern 实例
-- `Mod_Motor.c`：定义 `motor_left`/`motor_right` 两个全局实例
-- `Mod_Comm_Can.c`：加 TX/RX 错误计数器，`Can_Rx_Process` 中调用弱符号 `TaskCanMotor_RxCallback`
-- `sysclock.h`：补 `sysclock_get_ms()` 声明
+### 2. CAN 协议帧定义
 
-### 3. CAN 协议帧组装与解析 `[未验证]`
+| 帧 | Mode ID | 方向 | 周期 | 状态 |
+|---|---|---|---|---|
+| 左电机控制帧 | 0x020 | 显域→动力 | RX 事件驱动 | 代码完成，未上板验证 |
+| 右电机控制帧 | 0x021 | 显域→动力 | RX 事件驱动 | 代码完成，未上板验证 |
+| 左电机状态帧 | 0x110 func=0x00 | 动力→显域 | 10ms | 代码完成，未上板验证 |
+| 右电机状态帧 | 0x110 func=0x01 | 动力→显域 | 10ms | 代码完成，未上板验证 |
+| 心跳帧 | 0x320 | 动力→显域 | 500ms | 代码完成，未上板验证 |
 
-| 帧 | Mode ID | 方向 | 周期 | 处理位置 | 验证 |
-|---|---|---|---|---|---|
-| 左电机控制帧 | 0x020 | 显示域→动力域 | RX 事件驱动 | `TaskCanMotor_RxCallback()` → `motor_left` | 未验证 |
-| 右电机控制帧 | 0x021 | 显示域→动力域 | RX 事件驱动 | `TaskCanMotor_RxCallback()` → `motor_right` | 未验证 |
-| 左电机状态帧 | 0x110 (func=0x00) | 动力域→显示域 | 10ms | `Task_Can_Motor_Updata()` | 未验证 |
-| 右电机状态帧 | 0x110 (func=0x01) | 动力域→显示域 | 10ms | `Task_Can_Motor_Updata()` | 未验证 |
-| 查询回显 | 0x080 | 双向 | RX 事件驱动 | `TaskCanMotor_RxCallback()` | 未验证 |
-| 心跳帧 | 0x320 | 动力域→显示域 | 500ms | `Task_Can_Heartbeat_Updata()` | 未验证 |
-
-### 4. 电机驱动实现（drv_motor.c/h）— 双电机 `[未验证]`
-
-- **选型**：MG310 直流减速电机 ×2（7.4V, 1:30, 11 PPR AB 相编码器）
-- **驱动芯片**：DRV8833 ×2（7.4V 在 2.7~10.8V 最佳区间，堵转 1.85A 在 2A 峰值内，内置过流/过热/欠压保护）
+### 3. 电机驱动实现（drv_motor.c/h）`[已验证编码器，PWM 未上板]`
 
 | 信号 | 左电机 | 外设 | 右电机 | 外设 |
 |---|---|---|---|---|
-| PWM | PA8 | TIM1_CH1 | PB8 | TIM4_CH3 |
+| PWM | PA8 | TIM1_CH1 (20kHz) | PB8 | TIM4_CH3 (20kHz) |
 | DIR | PA4 | GPIO | PB9 | GPIO |
-| EN | PB0 | GPIO | PA5 | GPIO |
-| Enc A | PA0 | TIM2_CH1 | PA6 | TIM3_CH1 |
+| Enc A | PA0 | TIM2_CH1（4× 编码器）| PA6 | TIM3_CH1（4× 编码器）|
 | Enc B | PA1 | TIM2_CH2 | PA7 | TIM3_CH2 |
 
-- **PWM**：两路均为 20kHz（PSC=3, ARR=899，TIM1_CH1 用于左，TIM4_CH3 用于右）
-- **编码器**：均为 TI12 4× 边沿计数，1320 脉冲/转
-- **转速计算**：`rpm×10 = delta_count × 1000 / 11`（5ms 差分）
-- **角度计算**：`°×10 = (pos % 1320) × 3600 / 1320`
-- **API 统一**：所有驱动函数通过 `motor_id`（`MOTOR_ID_LEFT=0`/`MOTOR_ID_RIGHT=1`）区分
-- `motor_left`/`motor_right` 两个独立 `Motor_Struct` 实例，`motor` 宏仍指向 `motor_left`（向后兼容）
-- `Mod_Motor_Update()` 每 5ms 依次更新左右编码器实测值
+- TB6612FNG 单芯片驱动双电机：A 通道→左，B 通道→右
+- STBY 硬接 5V，AIN2/BIN2 硬接 GND，单电机启停 PWM=0 刹车
 
-### 6. PID 转速闭环控制 `[未验证]`
+### 4. PID 转速闭环 `[未上板验证]`
 
-- **位置式 PID + 积分抗饱和**：`pid.h/c` 实现通用 `PidController` 结构体和 `Pid_Init`/`Pid_Compute`/`Pid_Reset` 接口
-- **双电机独立 PID**：`Mod_Motor.c` 中定义 `static PidController pid_left`/`pid_right` 全局实例
-- **控制周期**：5ms（与编码器更新同频），`Mod_Motor_Process()` 由 `Task_Motor_Ctl()` 调用
-- **停机策略**：`target_speed_enc == 0` → 完全关闭电机（`drv_motor_set_enable(0)` + `Pid_Reset()`），节省功耗、避免零速微振
-- **默认参数**：Kp=2.0, Ki=0.1, Kd=0.5, 输出限幅 ±999（PWM_MAX），需上机实测后微调
-- **积分抗饱和**：`integral_limit = output_max / ki`，防止 PWM 饱和后积分持续增长导致退饱和振荡
+- 位置式 PID + 积分抗饱和，左右独立，5ms 周期
+- 默认参数 Kp=2.0, Ki=0.1, Kd=0.5
+- 停机策略：`target_speed_enc==0` → PWM=0 + Pid_Reset()
 
-数据流：
-```
-CAN RX → target_speed_enc → Pid_Compute(setpoint, feedback) → PWM → 电机
-                                              ↑
-                  encoder → drv_motor_update → cur_speed_enc
-```
+### 5. UART 串口控制台 `[已验证]`
 
-### 5. UART 驱动完善 `[未验证]`
+- 115200 8N1，支持 `echo`、`help` 命令
+- TX/RX 双队列，ISR 驱动接收 + 主循环消费
 
-- `USART_Mode` 从 `Tx|Tx` 修正为 `Tx|Rx`
-- GBK 乱码注释全部修正为 UTF-8
-- 新增 `Usart_SendByte/Usart_SendData/Usart_SendString` 轮询 TX 函数（链路验证打印用）
-- `Task_Uart_Init` 现在真正调用 `Mod_Usart_Init()` 初始化 USART1
+### 6. 周期调度 `[已验证]`
+
+- SysTick 中断驱动 8 周期标志位（1ms/5ms/10ms/20ms/100ms/200ms/500ms/1000ms）
+- `tpf` 加 `volatile` 修饰（ISR 写入/主循环读取）
 
 ---
 
@@ -150,120 +110,93 @@ CAN RX → target_speed_enc → Pid_Compute(setpoint, feedback) → PWM → 电�
 
 ### 已完成模块
 
-| 模块 | 文件 | 实现状态 | 验证状态 |
-|---|---|---|---|
-| CAN 驱动层 | `driver/drv_can.c` | 完成 | 未验证 |
-| CAN 模块层 | `Mod/Mod_Comm_Can.c` | 完成 | 未验证 |
-| CAN 任务层 | `task/task_comm_can.c` | 完成 | 未验证 |
-| 协议定义 | `protocol/CAN_Protocol.h` | 完成 | 未验证 |
-| 系统时钟 | `System/sysclock.c` | 完成 | 已验证 |
-| 主循环 | `User/main.c` | 完成 | 已验证 |
-| 电机模块 | `Mod/Mod_Motor.c/h` | 完成 | 未验证 |
-| 电机任务 | `task/task_motor_ctl.c` | 完成 | 未验证 |
-| 电机驱动 | `driver/drv_motor.c` | 完成 | 未验证 |
-| 串口驱动 | `driver/drv_usart.c` | 完成 | 已验证 |
-| 串口模块 | `Mod/Mod_Usart.c` | 完成 | 已验证 |
-| 串口任务 | `task/task_uart.c` | 完成 | 已验证 |
-| 环形队列 | `component/queue/queue.c` | 完成 | 已验证 |
-| PID 控制器 | `component/pid/pid.c` | 完成 | 未验证 |
-| 延时 | `System/Delay.c` | 可用 | 已验证 |
+| 模块 | 文件 | 状态 |
+|---|---|---|
+| CAN 驱动层 | `driver/drv_can.c/h` | 未上板验证 |
+| CAN 模块层 | `Mod/Mod_Comm_Can.c/h` | 未上板验证 |
+| CAN 任务层 | `task/task_comm_can.c/h` | 未上板验证 |
+| 协议定义 | `protocol/CAN_Protocol.h` | 未上板验证 |
+| 电机驱动 | `driver/drv_motor.c/h` | 编码器已验证，PWM 未上板 |
+| 电机模块 | `Mod/Mod_Motor.c/h` | 未上板验证 |
+| 电机任务 | `task/task_motor_ctl.c/h` | 未上板验证 |
+| PID 控制器 | `component/pid/pid.c/h` | 未上板验证 |
+| 串口驱动 | `driver/drv_usart.c/h` | 已验证 |
+| 串口模块 | `Mod/Mod_Usart.c/h` | 已验证 |
+| 串口任务 | `task/task_uart.c/h` | 已验证 |
+| 系统时钟 | `System/sysclock.c/h` | 已验证 |
+| 环形队列 | `component/queue/queue.c/h` | 已验证 |
+| 延时 | `System/Delay.c/h` | 已验证 |
+| 主循环 | `User/main.c` | 已验证 |
 
-### 当前编译状态
+### 编译状态
 
-- ✅ **已验证**：armcc V5.06, C99, 优化等级 1，正常编译通过、无警告无错误
-- ❌ **未验证**：所有硬件功能（CAN 收发、PWM 输出、编码器读数、串口通信）均未上板测试
-
-### 验证状态说明
-
-| 标签 | 含义 |
-|---|---|
-| ✅ 已验证 | 代码通过编译或软件逻辑已确认正确 |
-| ❌ 未验证 | 代码写完但未在目标硬件上实际运行测试 |
-
----
-
-## 架构设计决策
-
-1. **裸机轮询**：无 RTOS，主循环 + SysTick 中断驱动多周期调度
-2. **CAN TX 轮询式**：非中断驱动发送，主循环 10ms 周期调用 `Can_Tx_Process`，邮箱满时自动重试
-3. **CAN RX 中断+队列**：FIFO0 中断接收 → 环形队列缓冲 → 主循环消费（解耦 ISR 和业务）
-4. **单滤波器全通**：掩码 0，接收所有 CAN 消息，后续可在应用层过滤
-5. **SCE 中断注册**：使用 `CAN_IT_ERR` 统一使能错误中断（非 EWG/EPV/BOF 保留位），ABOM 硬件自动 Bus-Off 恢复
-6. **管道-业务分离**：CAN 任务层只负责帧收发（TX 队列消费、RX 队列分派），电机/心跳等实体数据的组帧入队由各自业务任务负责，避免 CAN 任务膨胀
-7. **RX 弱符号回调**：`TaskCanMotor_RxCallback` 在 `Mod_Comm_Can.c` 中声明为 weak，`task_comm_can.c` 提供强实现，实现 CAN 模块与电机模块解耦
-8. **双电机独立 PID**：左右电机各一个 `PidController` 全局实例，5ms 周期计算，输出直接驱动 PWM。停机时（target=0）彻底关闭电机+复位 PID 防止积分残留
+- armcc V5.06, C99, 优化等级 1，编译通过、无警告无错误
 
 ---
 
 ## 下一步待做工作（按优先级）
 
-### P0 — 电机驱动上板验证 `[已实现 待验证]`
+### P0 — CAN 通信上板验证（最高优先级）
 
-| 信号 | 左电机 | 外设 | 右电机 | 外设 |
-|---|---|---|---|---|
-| PWM | PA8 | TIM1_CH1 | PB8 | TIM4_CH3 |
-| DIR | PA4 | GPIO | PB9 | GPIO |
-| EN | PB0 | GPIO | PA5 | GPIO |
-| Enc A | PA0 | TIM2_CH1 | PA6 | TIM3_CH1 |
-| Enc B | PA1 | TIM2_CH2 | PA7 | TIM3_CH2 |
+这是串联两个 ECU 的关键链路。
 
-- **PWM 频率**：两路 20kHz（PSC=3, ARR=899）
-- **编码器**：TI12 4× 边沿计数，1320 脉冲/转
-- 验证方法：
-  1. 在 `Mod_Motor_Update()` 加串口打印 `motor_left.cur_speed_enc`/`motor_right.cur_speed_enc`
-  2. 手动转动电机，确认编码器数值变化
-  3. 通过 UART 控制台发指令（可先在 `Usart_ParseCommand` 扩展 `motor` 命令），手动设 `target_speed_enc` 为非零值，确认 PWM 输出和电机转动
+**动力域侧（本 ECU）**：
+1. 连接 CAN 收发器到 PA11(RX)/PA12(TX)
+2. 与显示域 ECU 的 CAN 总线互联（共 CANH/CANL）
+3. 两端 120Ω 终端电阻
 
-### P1 — PID 转速闭环验证 `[已实现 待验证]`
+**验证步骤**：
+1. 显示域上电发 0x020（左）/0x021（右）控制帧（50ms 周期）
+2. 动力域串口观察 `rx_ctrl_count` 增长
+3. 显示域观察 0x110 状态帧（10ms）和 0x320 心跳帧（500ms）
 
-- 左右电机独立 PID，默认 Kp=2.0, Ki=0.1, Kd=0.5
-- 验证方法：手动设定目标转速，通过串口观察 `cur_speed_enc` 是否收敛到 `target_speed_enc`
-- 需要根据实际响应微调 PID 参数
+**注意事项**：
+- 显示域 `CAN_Protocol.h` 中的 `CAN_HEARTBEAT_ID` mode 为 0x000，应改为 0x320
+- `CanCtrlMotor` 结构体线序与显示域实际发送不一致，RX 解析请按裸字节处理
 
-### P2 — CAN 通信上板验证 `[已实现 待验证]`
+### P1 — 电机 PWM 驱动上板
 
-- 连接显示域 ECU（F429），确认 CAN 收发正常
-- 显示域发 0x020（左）/0x021（右）控制帧 → 动力域接收并写入 `motor_*.target_*`
-- 动力域发 0x110 状态帧（10ms）→ 显示域接收
-- 动力域发 0x320 心跳帧（500ms）→ 显示域接收
+1. 连接 TB6612FNG 电源（7.4V VM + 5V VCC）和电机
+2. 通过 UART 控制台发 `motor left 500` 指令 → 观察电机是否转动
+3. 确认 PWM 频率 20kHz、占空比可控
 
-### P3 — 命令扩展 `[待实现]`
+> 当前电机会在后期更换。PWM 只要能驱动电机转即可，不需要精确转速控制。
 
-在 `Usart_ParseCommand()` 中扩展调试命令（弱符号，可在 `task_uart.c` 覆盖）：
-- `motor left <speed>` / `motor right <speed>` — 手动控制左/右电机转速
-- `motor stop` — 紧急停止双电机
-- `status` — 打印当前转速、编码器角度、PID 输出
-- `pid <kp> <ki> <kd>` — 在线调参
+### P2 — 显示域 LVGL 界面开发
+
+在显示域 ECU（STM32F429）侧开发：
+- SPI LCD (ILI9341V) 驱动
+- LVGL 移植（FreeRTOS + 触摸 + 显示缓冲）
+- 仪表盘界面（车速、转速、电机状态指示）
+
+### P3 — 显示域 ↔ 动力域 闭环联调
+
+- 显示域发控制指令 → 动力域接收并驱动电机
+- 动力域上报状态 → 显示域实时刷新 UI
 
 ### P4 — 故障保护 `[待实现]`
 
-- **IWDG**：1s 超时独立看门狗
-- **CAN 超时停机**：`motor_left.last_ctrl_ms` / `motor_right.last_ctrl_ms` 各 200ms 超时检测
-- **堵转检测**：500ms 内编码器无变化 → 停机
-- **编码器丢失**：100ms 内无脉冲 → 告警
-- 上述保护均需对左右电机分别实现
+- IWDG：1s 超时独立看门狗
+- CAN 超时停机：`motor_*.last_ctrl_ms` 200ms 超时
+- 堵转检测、编码器丢失检测
 
-### P5 — 显示域同步 `[待实现]`
+### P5 — 更换电机
 
-- 将 `CanStatusMotor` 同步到 `display_ecu_f429/protocol/CAN_Protocol.h`
-- 修正显示域心跳 `CAN_HEARTBEAT_ID` 的 mode 0x000 → 0x320
+- 电机：转速更准、非蜗杆减速（双向可手动拧动）
+- 编码器参数更新：ENC_CPR = PPR × 4 × GEAR_RATIO
 
 ---
 
-## 已知注意事项
+## 架构设计决策
 
-1. **CAN_SELF_ADDR = CAN_ADDR_MOTORBOARD**：切勿改回 MAINBOARD
-2. **Delay.c 与 sysclock.c 共享 SysTick**：`Delay_us/ms` 会直接操作 SysTick 寄存器，sysclock 使用 SysTick 中断。两者不可同时使用
-3. **注释编码**：文件编码为 UTF-8，所有中文注释使用 `/* ... */` 格式
-4. **CAN 滤波器是全通**：掩码为 0，接收总线上所有 29-bit 扩展帧
-5. **TX 队列容量 20 帧**：入队失败时 `event_err_count.motor_tx_err_count++` 记录，不做丢失降级
-6. **管道-业务分离**：新增 CAN 协议帧时应遵循——组帧+入队放业务任务，TX 队列出队+硬件发送放 CAN 任务
-7. **CanCtrlMotor 结构体与线上线序不一致**：显示域实际发送 `[speed, speed, angle, angle, 0, 0, 0, 0x03]`，不要用结构体直接 memcpy 解析，收发请按裸字节处理
-8. **DRV8833 VM 最高 10.8V**，切勿接 12V。编码器 VCC 为 5V，切勿接 7.4V/12V
-9. **Keil 项目**：`drv_motor.c` 在项目文件中配置了 `<FileOption>` 内自定义对象文件名（Keil IDE 自动展开），需保留不做回退
-10. **ISR/主循环共享变量必须加 `volatile`**：`tpf`（在 `sysclock.h/c` 中）由 SysTick_ISR 写入、主循环读取。不加 volatile，armcc -O1 会缓存寄存器值
-11. **UART 中断优先级**：USART1 抢占优先级 3（高于 CAN RX0(5)、CAN SCE(4)、SysTick(15)），可抢占其他中断
-12. **UART RX 架构**：中断累积 → `Usart_Rx_Event(buf,len)`（ISR 上下文）→ RX 队列 → `Usart_Rx_Process()`（20ms 主循环）→ 行缓冲 + 回显 + `Usart_ParseCommand()`。TX 路径：`Usart_Tx_Event(data,len)`（业务层）→ TX 队列 → `Usart_Tx_Process()`（20ms 主循环）→ 轮询发送
+1. **裸机轮询**：主循环 + SysTick 中断驱动多周期调度
+2. **CAN TX 轮询式**：10ms 周期 `Can_Tx_Process`，邮箱满自动重试
+3. **CAN RX 中断+队列**：FIFO0 中断接收 → 环形队列 → 主循环消费
+4. **管道-业务分离**：CAN 任务做帧收发管道，电机/心跳业务任务做组帧入队
+5. **RX 弱符号回调**：`TaskCanMotor_RxCallback` weak → 解耦 CAN 与电机模块
+6. **双电机独立 PID**：左右各一个 `PidController`，5ms 周期
+7. **单 TB6612FNG**：A 通道→左电机、B 通道→右电机、STBY 硬接 5V
+8. **单电机启停**：PWM=0 刹车（TB6612 下管导通），不操作 GPIO
 
 ---
 
@@ -271,100 +204,80 @@ CAN RX → target_speed_enc → Pid_Compute(setpoint, feedback) → PWM → 电�
 
 ### 电机选型
 
-| 型号 | MG310 直流减速电机 |
+| 参数 | 当前值（临时） | 换电机后预期 |
+|---|---|---|
+| 型号 | MG310 蜗杆减速 | TBD（双向无自锁） |
+| 额定电压 | 7.4V | 7.4V |
+| PPR | 13 | TBD |
+| 减速比 | 1:20 | TBD |
+| ENC_CPR | 260（手动正转有效值）| PPR×4×减速比 |
+
+### 驱动芯片（TB6612FNG ×1）
+
+| 参数 | 值 |
 |---|---|
-| 额定电压 | 7.4V（2S 锂电） |
-| 减速比 | 1:30 |
-| 编码器 | 霍尔 A/B 双相，11 PPR |
-| 编码器供电 | 5V |
-| 满圈计数 | 11 × 30 × 4 = 1320 计数/转（TIM2 4× 边沿） |
+| VM | 7.4V（稳压模块） |
+| VCC / STBY | 5V（稳压模块，始终使能） |
+| PWMA/AIN1/AIN2 | PA8/PA4/GND → 左电机 |
+| PWMB/BIN1/BIN2 | PB8/PB9/GND → 右电机 |
+| PWM 频率 | 20kHz |
 
-### 电机驱动芯片
-
-| 型号 | DRV8833 |
-|---|---|
-| 供电范围 | VM 2.7~10.8V, VCC 3.3/5V |
-| 持续/峰值电流 | 1.5A / 2A |
-| 保护 | 过流/过热/欠压锁定，逐周期保护 |
-| 控制接口 | IN/IN 模式：AIN1=PWM, AIN2=DIR, nSLEEP=EN |
-
-### 接线表（双电机，每台 MG310 六线引出）
-
-| 线色/标识 | 左电机 | 右电机 | 电压 |
-|---|---|---|---|
-| M+ | DRV8833(L) AOUT1 | DRV8833(R) BOUT1 | 7.4V（通过 H 桥） |
-| M- | DRV8833(L) AOUT2 | DRV8833(R) BOUT2 | 7.4V（通过 H 桥） |
-| VCC | 稳压模块 5V | 稳压模块 5V | 5V |
-| GND | GND | GND | 0V |
-| A | PA0 (TIM2_CH1) | PA6 (TIM3_CH1) | 信号/上拉 |
-| B | PA1 (TIM2_CH2) | PA7 (TIM3_CH2) | 信号/上拉 |
-
-### DRV8833 控制接线
-
-| DRV8833 引脚 | 左电机 STM32 引脚 | 右电机 STM32 引脚 | 功能 |
-|---|---|---|---|
-| IN1 | PA8 (TIM1_CH1) | PB8 (TIM4_CH3) | PWM 输入 |
-| IN2 | PA4 (GPIO) | PB9 (GPIO) | 方向控制 |
-| nSLEEP | PB0 (GPIO) | PA5 (GPIO) | 使能/休眠 |
-| VM | 电池 7.4V | 电池 7.4V | 电机电源 |
-| VCC | 5V | 5V | 逻辑电源 |
-| OUT1 | M+ (左) | M+ (右) | 电机输出 |
-| OUT2 | M- (左) | M- (右) | 电机输出 |
-
-### 电源树
+### 电源架构
 
 ```
-7.4V 电池（2S 锂电）
-│
-├── 稳压模块 IN
-│   ├── 3.3V → STM32F103
-│   └── 5V  → 编码器 VCC
-│           → DRV8833 VCC（逻辑电源）
-│
-└── 电池 7.4V → DRV8833(L) VM / DRV8833(R) VM（电机驱动电源）
-    ├── DRV8833(L) AOUT1/AOUT2 → MG310(左) M+/M-
-    └── DRV8833(R) BOUT1/BOUT2 → MG310(右) M+/M-
+7.4V 电池 → 稳压模块 → 7.4V → TB6612 VM
+                     → 5V   → TB6612 VCC/STBY + 编码器 VCC
+                     → 3.3V → STM32 VDD
+                     → GND  → 所有模块共地
 ```
-
-### 保护建议
-
-- PTC 自恢复保险丝 500mA（电池 → DRV8833 VM 之间）
-- 100μF/25V 电解 + 0.1μF 陶瓷（VM 对地，靠近芯片）
-- 软件层：PWM 上限 80%、反转前刹车 10ms、500ms 堵转检测（待实现）
 
 ---
 
-## 快速参考
+## 已知注意事项
 
-### 关键的宏和地址
+1. **CAN_SELF_ADDR = CAN_ADDR_MOTORBOARD (0x02)**：切勿改回 MAINBOARD
+2. **CAN 滤波器全通**：掩码 0，接收所有 29-bit 扩展帧
+3. **TX 队列容量 20 帧**：入队失败 `motor_tx_err_count++`，不做丢失降级
+4. **CanCtrlMotor 结构体线序与线上不一致**：不要用结构体直接 memcpy 解析
+5. **Delay.c 与 sysclock.c 共享 SysTick**：不可同时使用
+6. **tpf 必须加 volatile**：ISR 写入/主循环读取，armcc -O1 会缓存
+7. **Keil 项目**：`drv_motor.c` 有 `<FileOption>` 自定义对象文件名，需保留
+8. **TB6612FNG ×1**：STBY 硬接 5V，空闲引脚 PB0/PA5 可用
+9. **编码器 VCC = 5V**，切勿接 7.4V
+10. **VM 端并联** 100μF/25V 电解 + 0.1μF 陶瓷（靠近芯片）
+11. **PWM 频率 20kHz**，超出人耳范围
+12. **UART 中断优先级**：USART1=3 > CAN RX0=5 > CAN SCE=4 > SysTick=15
 
-| 定义 | 值 | 来源 |
+---
+
+## 主循环调度表
+
+| 周期 | 标志位 | 执行的任务 |
 |---|---|---|
-| `CAN_SELF_ADDR` | 0x02 (MOTORBOARD) | `protocol/CAN_Protocol.h:62` |
-| `CAN_Prescaler` | 6 | `driver/drv_can.c:42` |
-| CAN 波特率 | 500kbps (36M/6/12) | BS1=9, BS2=2, SJW=1, 采样点≈83.3% |
-| `TICKS_PER_MS` | 72 | `System/sysclock.c:7`（72MHz 下 1ms=72000 tick） |
-| `ENC_PPR` | 11 | `driver/drv_motor.h:7`（MG310 编码器单相每转脉冲） |
-| `ENC_GEAR_RATIO` | 30 | `driver/drv_motor.h:8`（MG310 减速比 1:30） |
-| `ENC_CPR` | 1320 | `driver/drv_motor.h:9`（满圈计数 = 11×30×4） |
-| `PWM_MAX` | 999 | `driver/drv_motor.h:12`（占空比 -999~+999） |
-| PWM 频率 | 20kHz | TIM1_CH1(左) + TIM4_CH3(右), PSC=3, ARR=899, f=72M/(4×900) |
-| Encoder TIM | TIM2(左) / TIM3(右) | TI12 4× 边沿计数，1320 CPR |
+| 5ms | `tpf.task_period_5ms` | `Task_Motor_Ctl()` — 编码器更新 + PID 控制 |
+| 10ms | `tpf.task_period_10ms` | `Task_Comm_Rx_Can()` + `Task_Comm_Tx_Can()` + `Task_Can_Motor_Updata()` |
+| 20ms | `tpf.task_period_20ms` | `Task_Uart_Tx()` + `Task_Uart_Rx()` |
+| 500ms | `tpf.task_period_500ms` | `Task_Can_Heartbeat_Updata()` |
 
-### 中断向量与处理函数
+## 中断向量
 
 | 中断源 | 向量名 | 处理函数 | 文件 |
 |---|---|---|---|
-| CAN RX0 (FIFO0) | `USB_LP_CAN1_RX0_IRQHandler` | `USB_LP_CAN1_RX0_IRQHandler` | `driver/drv_can.c` |
+| CAN RX0 | `USB_LP_CAN1_RX0_IRQHandler` | `USB_LP_CAN1_RX0_IRQHandler` | `driver/drv_can.c` |
 | CAN SCE | `CAN1_SCE_IRQHandler` | `CAN1_SCE_IRQHandler` | `driver/drv_can.c` |
 | SysTick | `SysTick_Handler` | `SysTick_Handler` → `SysClock_Cb()` | `System/sysclock.c` |
 | USART1 | `USART1_IRQHandler` | `USART1_IRQHandler`（RXNE+IDLE） | `driver/drv_usart.c` |
 
-### 周期调度表
+## 快速参考
 
-| 周期 | 标志位 | 执行的任务 |
+| 定义 | 值 | 说明 |
 |---|---|---|
-| 5ms | `tpf.task_period_5ms` | `Task_Motor_Ctl()` — 刷新左右编码器实测值 + PID 转速闭环控制 |
-| 10ms | `tpf.task_period_10ms` | `Task_Comm_Rx_Can()`, `Task_Comm_Tx_Can()`, `Task_Can_Motor_Updata()` — 左右电机状态帧各一(0x110) |
-| 20ms | `tpf.task_period_20ms` | `Task_Uart_Tx()`, `Task_Uart_Rx()` |
-| 500ms | `tpf.task_period_500ms` | `Task_Can_Heartbeat_Updata()` (0x320 心跳帧) |
+| `CAN_SELF_ADDR` | 0x02 | 动力域设备地址 |
+| CAN 波特率 | 500kbps | BS1=9tq, BS2=2tq, SJW=1tq, 采样点≈83.3% |
+| `ENC_PPR` | 13 | 临时电机编码器单相 PPR |
+| `ENC_GEAR_RATIO` | 20 | 临时减速比 |
+| `ENC_CPR` | 260 | 临时有效计数/圈（换电机后改 PPR×4×GEAR） |
+| `PWM_MAX` | 999 | 占空比 ±999 |
+| PWM 频率 | 20kHz | PSC=3, ARR=899, f=72M/(4×900) |
+| Encoder TIM | TIM2(左)/TIM3(右) | TI12 4× 边沿计数 |
+| UART 波特率 | 115200 8N1 | PA9(TX)/PA10(RX) |

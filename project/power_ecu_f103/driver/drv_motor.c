@@ -25,7 +25,6 @@ void drv_motor_init(uint8_t motor_id)
 
 		/* ── 时钟使能 ── */
 		RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA |
-		                       RCC_APB2Periph_GPIOB |
 		                       RCC_APB2Periph_TIM1  |
 		                       RCC_APB2Periph_AFIO, ENABLE);
 		RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM2, ENABLE);
@@ -36,14 +35,7 @@ void drv_motor_init(uint8_t motor_id)
 		gpio.GPIO_Speed = GPIO_Speed_50MHz;
 		GPIO_Init(MOTOR_L_DIR_PORT, &gpio);
 
-		/* EN (PB0) — 推挽输出 */
-		gpio.GPIO_Pin   = MOTOR_L_EN_PIN;
-		gpio.GPIO_Mode  = GPIO_Mode_Out_PP;
-		gpio.GPIO_Speed = GPIO_Speed_50MHz;
-		GPIO_Init(MOTOR_L_EN_PORT, &gpio);
-
 		GPIO_SetBits(MOTOR_L_DIR_PORT, MOTOR_L_DIR_PIN);   /* DIR = H */
-		GPIO_ResetBits(MOTOR_L_EN_PORT, MOTOR_L_EN_PIN);   /* EN = L */
 
 		/* PA8 (TIM1_CH1) — 复用推挽输出 */
 		gpio.GPIO_Pin   = MOTOR_L_PWM_PIN;
@@ -88,8 +80,7 @@ void drv_motor_init(uint8_t motor_id)
 		TIM_SetCounter(TIM2, 0);
 		TIM_Cmd(TIM2, ENABLE);
 
-		last_enc_cnt_l  = 0;
-		motor_enabled_l = 0;
+		last_enc_cnt_l = 0;
 	}
 	else /* MOTOR_ID_RIGHT */
 	{
@@ -108,14 +99,7 @@ void drv_motor_init(uint8_t motor_id)
 		gpio.GPIO_Speed = GPIO_Speed_50MHz;
 		GPIO_Init(MOTOR_R_DIR_PORT, &gpio);
 
-		/* EN (PA5) — 推挽输出 */
-		gpio.GPIO_Pin   = MOTOR_R_EN_PIN;
-		gpio.GPIO_Mode  = GPIO_Mode_Out_PP;
-		gpio.GPIO_Speed = GPIO_Speed_50MHz;
-		GPIO_Init(MOTOR_R_EN_PORT, &gpio);
-
 		GPIO_SetBits(MOTOR_R_DIR_PORT, MOTOR_R_DIR_PIN);   /* DIR = H */
-		GPIO_ResetBits(MOTOR_R_EN_PORT, MOTOR_R_EN_PIN);   /* EN = L */
 
 		/* PB8 (TIM4_CH3) — 复用推挽输出 */
 		gpio.GPIO_Pin   = MOTOR_R_PWM_PIN;
@@ -159,8 +143,7 @@ void drv_motor_init(uint8_t motor_id)
 		TIM_SetCounter(TIM3, 0);
 		TIM_Cmd(TIM3, ENABLE);
 
-		last_enc_cnt_r  = 0;
-		motor_enabled_r = 0;
+		last_enc_cnt_r = 0;
 	}
 }
 
@@ -212,43 +195,36 @@ void drv_motor_set_pwm(uint8_t motor_id, int16_t duty)
 
 /* ───────────────────────────────────────────
  *  drv_motor_set_enable
- *  0=禁止（DRV8833 休眠，H 桥高阻）
- *  1=使能（DRV8833 唤醒，正常驱动）
+ *  TB6612 STBY 硬接 VCC，单电机启停靠 PWM=0 刹车：
+ *   0=禁止 → PWM清零（H桥下管导通，刹车制动）
+ *   1=使能 → 允许 PID 控制
  * ─────────────────────────────────────────── */
 void drv_motor_set_enable(uint8_t motor_id, uint8_t en)
 {
-	GPIO_TypeDef *en_port;
-	uint16_t      en_pin;
 	uint8_t      *p_enabled;
 	Motor_Struct *p_motor;
 
 	if (motor_id == MOTOR_ID_LEFT)
 	{
-		en_port   = MOTOR_L_EN_PORT;
-		en_pin    = MOTOR_L_EN_PIN;
 		p_enabled = &motor_enabled_l;
 		p_motor   = &motor_left;
 	}
 	else
 	{
-		en_port   = MOTOR_R_EN_PORT;
-		en_pin    = MOTOR_R_EN_PIN;
 		p_enabled = &motor_enabled_r;
 		p_motor   = &motor_right;
 	}
 
-	*p_enabled = (en != 0);
-
-	if (*p_enabled)
+	if (en)
 	{
-		GPIO_SetBits(en_port, en_pin);
+		*p_enabled = 1;
 		p_motor->status |= MOTOR_STATUS_ENABLE;
 	}
 	else
 	{
-		/* 先清零 PWM 再休眠，避免 H 桥浮空 */
+		/* PWM=0 → TB6612 下管导通刹车 */
 		drv_motor_set_pwm(motor_id, 0);
-		GPIO_ResetBits(en_port, en_pin);
+		*p_enabled = 0;
 		p_motor->status &= ~(uint8_t)(MOTOR_STATUS_ENABLE | MOTOR_STATUS_RUN);
 	}
 }
@@ -291,7 +267,7 @@ void drv_motor_update(uint8_t motor_id)
 	delta  = enc_cnt - *p_last_enc;
 	*p_last_enc = enc_cnt;
 
-	p_motor->cur_speed_enc = (int16_t)(((int32_t)delta * 1000) / 11);
+	p_motor->cur_speed_enc = (int16_t)(((int32_t)delta * (int32_t)RPM_FACTOR) / (int32_t)ENC_CPR);
 
 	/* ── 角度 °×10（0 ~ 3599） ── */
 	pos_raw = (int32_t)enc_cnt % (int32_t)ENC_CPR;
