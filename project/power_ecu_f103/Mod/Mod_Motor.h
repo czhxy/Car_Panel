@@ -11,6 +11,8 @@
 
 /* 故障码 */
 #define MOTOR_ERROR_CAN_TIMEOUT  0x0001u   /* CAN 控制帧 200ms 超时 */
+#define MOTOR_ERROR_STALL        0x0002u   /* 堵转 */
+#define MOTOR_ERROR_ENC_LOSS     0x0004u   /* 编码器丢失/异常 */
 
 /* 电机数据中枢：RX(控制帧)写目标值，drv_motor 以后填实测值，TX(状态/心跳)读 */
 typedef struct motor_struct_type{

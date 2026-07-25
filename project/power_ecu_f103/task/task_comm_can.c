@@ -1,10 +1,8 @@
 #include "task_comm_can.h"
 #include "CAN_Protocol.h"
 #include "Mod_Motor.h"
-#include "drv_usart.h"
 #include "sysclock.h"
 #include <string.h>
-#include <stdio.h>
 
 void Task_Comm_Can_Init(void)
 {
@@ -47,13 +45,6 @@ void TaskCanMotor_RxCallback(CanRxMsg motor_pack)
 				motor_left.last_ctrl_ms = (uint32_t)sysclock_get_ms();
 				motor_left.error_code &= (uint16_t)(~MOTOR_ERROR_CAN_TIMEOUT);
 				motor_left.status &= (uint8_t)(~MOTOR_STATUS_FAULT);
-				/* CAN RX 回显：确认解析正确 */
-				{
-					char buf[20];
-					int n = snprintf(buf, sizeof(buf), "CAN L:%d\r\n", (int)spd);
-					if (n > 0 && n < (int)sizeof(buf))
-						Usart_SendData((uint8_t *)buf, (uint16_t)n);
-				}
 			}
 			break;
 		case MODE_ID_CTRL_RF:   /* 0x021 右前轮转向+轮毂控制（显示域→动力域） */
@@ -66,18 +57,7 @@ void TaskCanMotor_RxCallback(CanRxMsg motor_pack)
 				                                       | ((uint16_t)motor_pack.Data[3] << 8));
 				motor_right.rx_ctrl_count++;
 				motor_right.last_ctrl_ms = (uint32_t)sysclock_get_ms();
-				{
-					char buf[20];
-					int n = snprintf(buf, sizeof(buf), "CAN R:%d\r\n", (int)spd);
-					if (n > 0 && n < (int)sizeof(buf))
-						Usart_SendData((uint8_t *)buf, (uint16_t)n);
-				}
 			}
-			break;
-		case MODE_ID_QUERY_FAST:   /* 0x080 链路测试：回显显示域串口透传过来的数据（测试脚手架） */
-			Usart_SendString("RX 0x080: ");
-			Usart_SendData(motor_pack.Data, motor_pack.DLC);
-			Usart_SendString("\r\n");
 			break;
 		/* MODE_ID_ESTOP(0x000)/BRAKE(0x001) 等以后按需扩展 */
 		default:
@@ -94,7 +74,6 @@ void Task_Can_Heartbeat_Updata(void)
 {
 	CanTxMsg tx;
 	CanHeartbeatData hb;
-	static uint8_t first_run = 1;
 
 	memset(&tx, 0, sizeof(tx));
 	memset(&hb, 0, sizeof(hb));
@@ -111,17 +90,4 @@ void Task_Can_Heartbeat_Updata(void)
 	memcpy(tx.Data, &hb, sizeof(hb));
 
 	Can_Tx_Event(tx);
-
-	/* 首次发送时打印 HB ID 用于校验 */
-	if (first_run)
-	{
-		char buf[48];
-		int n;
-		first_run = 0;
-		n = snprintf(buf, sizeof(buf),
-			"HB TX: ID=0x%08lX up=%u st=0x%02X\r\n",
-			(unsigned long)tx.ExtId, (unsigned int)hb.uptime, (unsigned int)hb.status);
-		if (n > 0 && n < (int)sizeof(buf))
-			Usart_SendData((uint8_t *)buf, (uint16_t)n);
-	}
 }

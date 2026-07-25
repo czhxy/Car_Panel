@@ -13,6 +13,11 @@ typedef struct {
 /* ---- 初始化 ---- */
 void Mod_Usart_Init(void);
 
+/* ---- 串口输出（封装 drv_usart，供 task 层调用）---- */
+void Mod_Usart_SendByte(uint8_t b);
+void Mod_Usart_SendString(const char *s);
+void Mod_Usart_SendData(const uint8_t *p, uint16_t n);
+
 /* ---- RX 路径 ---- */
 /* ISR 回调：收到一帧数据推入 RX 队列 */
 void Usart_Rx_Event(const uint8_t *buf, uint16_t len);

@@ -49,15 +49,15 @@ static void uart_put_i16(int16_t val)
 
 	if (neg) buf[i++] = '-';
 
-	while (i > 0) Usart_SendByte((uint8_t)buf[--i]);
+	while (i > 0) Mod_Usart_SendByte((uint8_t)buf[--i]);
 }
 
 /** 打印 8 位十六进制 */
 static void uart_put_hex8(uint8_t val)
 {
 	static const char hex[] = "0123456789ABCDEF";
-	Usart_SendByte((uint8_t)hex[val >> 4]);
-	Usart_SendByte((uint8_t)hex[val & 0x0F]);
+	Mod_Usart_SendByte((uint8_t)hex[val >> 4]);
+	Mod_Usart_SendByte((uint8_t)hex[val & 0x0F]);
 }
 
 /** 字符串 → int16_t（支持负号） */
@@ -105,7 +105,9 @@ static void uart_put_f32(float f)
 {
 	int32_t v;
 	uint16_t frac;
+	uint8_t ndig = 0;
 	uint8_t neg = 0;
+	char dbuf[10];
 
 	if (f < 0.0f) { neg = 1; f = -f; }
 
@@ -113,28 +115,39 @@ static void uart_put_f32(float f)
 	frac = (uint16_t)(v % 1000);
 	v /= 1000;
 
-	if (neg) Usart_SendByte('-');
-	Usart_SendByte((uint8_t)('0' + (v % 10)));
+	if (neg) Mod_Usart_SendByte('-');
 
-	Usart_SendByte('.');
-	Usart_SendByte((uint8_t)('0' + ((frac / 100) % 10)));
-	Usart_SendByte((uint8_t)('0' + ((frac / 10)  % 10)));
-	Usart_SendByte((uint8_t)('0' + ( frac        % 10)));
+	/* 整数部分：支持多位数 */
+	if (v == 0) { Mod_Usart_SendByte('0'); }
+	else
+	{
+		while (v > 0 && ndig < (uint8_t)sizeof(dbuf))
+		{
+			dbuf[ndig++] = (char)('0' + (v % 10));
+			v /= 10;
+		}
+		while (ndig > 0) Mod_Usart_SendByte((uint8_t)dbuf[--ndig]);
+	}
+
+	Mod_Usart_SendByte('.');
+	Mod_Usart_SendByte((uint8_t)('0' + ((frac / 100) % 10)));
+	Mod_Usart_SendByte((uint8_t)('0' + ((frac / 10)  % 10)));
+	Mod_Usart_SendByte((uint8_t)('0' + ( frac        % 10)));
 }
 
 /** 打印单电机状态行 */
 static void print_motor_line(char side, Motor_Struct *m)
 {
-	Usart_SendByte(side_char(side));
-	Usart_SendString(" spd:");
+	Mod_Usart_SendByte(side_char(side));
+	Mod_Usart_SendString(" spd:");
 	uart_put_i16(m->cur_speed_enc);
-	Usart_SendString("/");
+	Mod_Usart_SendString("/");
 	uart_put_i16(m->target_speed_enc);
-	Usart_SendString(" ang:");
+	Mod_Usart_SendString(" ang:");
 	uart_put_i16(m->cur_angle_enc);
-	Usart_SendString(" st:");
+	Mod_Usart_SendString(" st:");
 	uart_put_hex8(m->status);
-	Usart_SendString("\r\n");
+	Mod_Usart_SendString("\r\n");
 }
 
 /** PID 调试打印 — 显示目标/实测/误差/输出 */
@@ -144,28 +157,28 @@ static void print_pid_line(char side)
 	PidController *p = get_pid(side);
 	int16_t err = m->target_speed_enc - m->cur_speed_enc;
 
-	Usart_SendString("[PID");
-	Usart_SendByte(side_char(side));
-	Usart_SendString("] tgt:");
+	Mod_Usart_SendString("[PID");
+	Mod_Usart_SendByte(side_char(side));
+	Mod_Usart_SendString("] tgt:");
 	uart_put_i16(m->target_speed_enc);
-	Usart_SendString(" cur:");
+	Mod_Usart_SendString(" cur:");
 	uart_put_i16(m->cur_speed_enc);
-	Usart_SendString(" err:");
+	Mod_Usart_SendString(" err:");
 	uart_put_i16(err);
-	Usart_SendString(" out:");
+	Mod_Usart_SendString(" out:");
 	uart_put_i16(p->output);
-	Usart_SendString("\r\n");
+	Mod_Usart_SendString("\r\n");
 }
 
 /** 打印 PID 参数 */
 static void print_pid_params(PidController *pid)
 {
-	Usart_SendString("Kp=");  uart_put_f32(pid->kp);
-	Usart_SendString(" Ki=");  uart_put_f32(pid->ki);
-	Usart_SendString(" Kd=");  uart_put_f32(pid->kd);
-	Usart_SendString(" integ="); uart_put_f32(pid->integral);
-	Usart_SendString(" out="); uart_put_i16(pid->output);
-	Usart_SendString("\r\n");
+	Mod_Usart_SendString("Kp=");  uart_put_f32(pid->kp);
+	Mod_Usart_SendString(" Ki=");  uart_put_f32(pid->ki);
+	Mod_Usart_SendString(" Kd=");  uart_put_f32(pid->kd);
+	Mod_Usart_SendString(" integ="); uart_put_f32(pid->integral);
+	Mod_Usart_SendString(" out="); uart_put_i16(pid->output);
+	Mod_Usart_SendString("\r\n");
 }
 
 /* ===== VOFA+ FireWater 波形输出 ===== */
@@ -192,7 +205,7 @@ void Vofa_SendFrame(void)
 	);
 
 	if (len > 0 && len < (int)sizeof(buf))
-		Usart_SendData((uint8_t *)buf, (uint16_t)len);
+		Mod_Usart_SendData((uint8_t *)buf, (uint16_t)len);
 }
 
 /* ===== 命令解析（强定义，覆盖 Mod_Usart.c 的弱符号）===== */
@@ -211,10 +224,10 @@ void Usart_ParseCommand(const char *cmd)
 		{
 			int16_t spd = parse_i16(cmd + 8);
 			get_motor(side)->target_speed_enc = spd;
-			Usart_SendByte(side_char(side));
-			Usart_SendByte(':');
+			Mod_Usart_SendByte(side_char(side));
+			Mod_Usart_SendByte(':');
 			uart_put_i16(spd);
-			Usart_SendString("\r\n");
+			Mod_Usart_SendString("\r\n");
 			return;
 		}
 	}
@@ -227,8 +240,8 @@ void Usart_ParseCommand(const char *cmd)
 		    && strcmp(cmd + 7, " stop") == 0)
 		{
 			get_motor(side)->target_speed_enc = 0;
-			Usart_SendByte(side_char(side));
-			Usart_SendString(" STOP\r\n");
+			Mod_Usart_SendByte(side_char(side));
+			Mod_Usart_SendString(" STOP\r\n");
 			return;
 		}
 
@@ -237,7 +250,7 @@ void Usart_ParseCommand(const char *cmd)
 		{
 			motor_left.target_speed_enc  = 0;
 			motor_right.target_speed_enc = 0;
-			Usart_SendString("ALL STOP\r\n");
+			Mod_Usart_SendString("ALL STOP\r\n");
 			return;
 		}
 	}
@@ -266,8 +279,8 @@ void Usart_ParseCommand(const char *cmd)
 		if ((side == 'l' || side == 'L' || side == 'r' || side == 'R')
 		    && strcmp(cmd + 5, " show") == 0)
 		{
-			Usart_SendByte(side_char(side));
-			Usart_SendString(" PID: ");
+			Mod_Usart_SendByte(side_char(side));
+			Mod_Usart_SendString(" PID: ");
 			print_pid_params(get_pid(side));
 			return;
 		}
@@ -282,15 +295,15 @@ void Usart_ParseCommand(const char *cmd)
 		{
 			pid_debug_enabled = 1;
 			pid_debug_side    = (side == 'l' || side == 'L') ? 0 : 1;
-			Usart_SendByte(side_char(side));
-			Usart_SendString(" PID ON\r\n");
+			Mod_Usart_SendByte(side_char(side));
+			Mod_Usart_SendString(" PID ON\r\n");
 			return;
 		}
 	}
 	if (strcmp(cmd, "pid off") == 0)
 	{
 		pid_debug_enabled = 0;
-		Usart_SendString("PID OFF\r\n");
+		Mod_Usart_SendString("PID OFF\r\n");
 		return;
 	}
 
@@ -307,9 +320,9 @@ void Usart_ParseCommand(const char *cmd)
 			{
 				pid->kp = parse_f32(cmd + 9);
 				Pid_Reset(pid);
-				Usart_SendByte(sc);
-				Usart_SendString(" Kp="); uart_put_f32(pid->kp);
-				Usart_SendString("\r\n");
+				Mod_Usart_SendByte(sc);
+				Mod_Usart_SendString(" Kp="); uart_put_f32(pid->kp);
+				Mod_Usart_SendString("\r\n");
 				return;
 			}
 			if (strncmp(cmd + 5, " ki ", 4) == 0)
@@ -318,18 +331,18 @@ void Usart_ParseCommand(const char *cmd)
 				if (pid->ki > 0.001f)
 					pid->integral_limit = (float)PWM_MAX / pid->ki;
 				Pid_Reset(pid);
-				Usart_SendByte(sc);
-				Usart_SendString(" Ki="); uart_put_f32(pid->ki);
-				Usart_SendString("\r\n");
+				Mod_Usart_SendByte(sc);
+				Mod_Usart_SendString(" Ki="); uart_put_f32(pid->ki);
+				Mod_Usart_SendString("\r\n");
 				return;
 			}
 			if (strncmp(cmd + 5, " kd ", 4) == 0)
 			{
 				pid->kd = parse_f32(cmd + 9);
 				Pid_Reset(pid);
-				Usart_SendByte(sc);
-				Usart_SendString(" Kd="); uart_put_f32(pid->kd);
-				Usart_SendString("\r\n");
+				Mod_Usart_SendByte(sc);
+				Mod_Usart_SendString(" Kd="); uart_put_f32(pid->kd);
+				Mod_Usart_SendString("\r\n");
 				return;
 			}
 		}
@@ -345,40 +358,51 @@ void Usart_ParseCommand(const char *cmd)
 			vofa_enabled    = 1;
 			vofa_side       = (side == 'l' || side == 'L') ? 0 : 1;
 			pid_debug_enabled = 0;  /* 互斥：关文本 PID 打印 */
-			Usart_SendByte(side_char(side));
-			Usart_SendString(" VOFA ON\r\n");
+			Mod_Usart_SendByte(side_char(side));
+			Mod_Usart_SendString(" VOFA ON\r\n");
 			return;
 		}
 	}
 	if (strcmp(cmd, "vofa off") == 0)
 	{
 		vofa_enabled = 0;
-		Usart_SendString("VOFA OFF\r\n");
+		Mod_Usart_SendString("VOFA OFF\r\n");
+		return;
+	}
+
+	/* ── enc — 打印原始编码器计数值（调试用）── */
+	if (strcmp(cmd, "enc") == 0)
+	{
+		Mod_Usart_SendString("Enc L:");
+		uart_put_i16(drv_motor_get_raw_enc(0));
+		Mod_Usart_SendString(" R:");
+		uart_put_i16(drv_motor_get_raw_enc(1));
+		Mod_Usart_SendString("\r\n");
 		return;
 	}
 
 	/* ── echo ── */
 	if (strncmp(cmd, "echo ", 5) == 0)
 	{
-		Usart_SendString(cmd + 5);
+		Mod_Usart_SendString(cmd + 5);
 		return;
 	}
 
 	/* ── help ── */
 	if (strcmp(cmd, "help") == 0)
 	{
-		Usart_SendString("=== Commands ===\r\n");
-		Usart_SendString("motor l/r <spd>|stop  motor all stop\r\n");
-		Usart_SendString("status [l/r]          pid l/r show|on|kp/ki/kd\r\n");
-		Usart_SendString("pid off               vofa l/r on|off\r\n");
-		Usart_SendString("echo <msg>            help\r\n");
+		Mod_Usart_SendString("=== Commands ===\r\n");
+		Mod_Usart_SendString("motor l/r <spd>|stop  motor all stop\r\n");
+		Mod_Usart_SendString("status [l/r]          pid l/r show|on|kp/ki/kd\r\n");
+		Mod_Usart_SendString("pid off               vofa l/r on|off\r\n");
+		Mod_Usart_SendString("echo <msg>            help\r\n");
 		return;
 	}
 
 	/* ── 未知命令 ── */
-	Usart_SendString("? ");
-	Usart_SendString(cmd);
-	Usart_SendString("\r\n");
+	Mod_Usart_SendString("? ");
+	Mod_Usart_SendString(cmd);
+	Mod_Usart_SendString("\r\n");
 }
 
 /* ===== 任务函数 ===== */

@@ -127,12 +127,6 @@ extern "C" {
 #define MODE_ID_HEARTBEAT       0x320U  /* 心跳帧 */
 
 /* ================================================================
- * 预置 CAN ID
- * ================================================================ */
-#define CAN_TX_ID         CAN_ID_BUILD(CAN_PRIO_ALERT,     CAN_SELF_ADDR, CAN_ADDR_BROADCAST, CAN_FTYPE_NORMAL, 0x001, 0x01)
-#define CAN_HEARTBEAT_ID  CAN_ID_BUILD(CAN_PRIO_HEARTBEAT, CAN_SELF_ADDR, CAN_ADDR_BROADCAST, CAN_FTYPE_NORMAL, MODE_ID_HEARTBEAT, 0x00)
-
-/* ================================================================
  * CanProtocolId — 协议 ID 结构化编解码
  * ================================================================ */
 

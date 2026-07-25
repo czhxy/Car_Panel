@@ -20,10 +20,8 @@ void Mod_Can_Init(void)
 }
 bool Can_Tx_Event(CanTxMsg TxMsg)
 {
-	if(Queue_Put(&CanTxQueue,&TxMsg))
-	{
+	if (Queue_Put(&CanTxQueue, &TxMsg))
 		return true;
-	}
 	event_err_count.motor_tx_err_count++;
 	return false;
 }
@@ -52,11 +50,8 @@ uint8_t Can_Tx_Process(void)
 
 bool Can_Rx_Event(CanRxMsg RxMsg)
 {
-	/* 将数据放进RX队列 */
-	if(Queue_Put(&CanRxQueue,&RxMsg))
-	{
+	if (Queue_Put(&CanRxQueue, &RxMsg))
 		return true;
-	}
 	event_err_count.motor_rx_err_count++;
 	return false;
 }

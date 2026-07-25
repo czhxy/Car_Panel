@@ -91,6 +91,130 @@ void Mod_Motor_Process(void)
 		{
 			timeout_printed_r = 0;
 		}
+
+		/* ── 编码器异常检测：计数器冻结 + 速度跳变双重检测 ── */
+		{
+			static int16_t  prev_raw_l, prev_raw_r;
+			static uint16_t frozen_cnt_l, frozen_cnt_r;
+			static uint8_t  enc_err_printed_l, enc_err_printed_r;
+			int16_t raw;
+
+			/* 左电机：计数器冻结检测（目标非零但原始计数器 200ms 不变 → 断线） */
+			raw = drv_motor_get_raw_enc(MOTOR_ID_LEFT);
+			if (motor_left.target_speed_enc != 0 && raw == prev_raw_l)
+			{
+				if (++frozen_cnt_l > 40U)
+				{
+					motor_left.target_speed_enc = 0;
+					motor_left.error_code |= MOTOR_ERROR_ENC_LOSS;
+					motor_left.status |= MOTOR_STATUS_FAULT;
+					if (!enc_err_printed_l)
+					{
+						Uart_Error("Encoder L lost, brake");
+						enc_err_printed_l = 1;
+					}
+				}
+			}
+			else { frozen_cnt_l = 0; enc_err_printed_l = 0; }
+			prev_raw_l = raw;
+
+			/* 右电机 */
+			raw = drv_motor_get_raw_enc(MOTOR_ID_RIGHT);
+			if (motor_right.target_speed_enc != 0 && raw == prev_raw_r)
+			{
+				if (++frozen_cnt_r > 40U)
+				{
+					motor_right.target_speed_enc = 0;
+					motor_right.error_code |= MOTOR_ERROR_ENC_LOSS;
+					motor_right.status |= MOTOR_STATUS_FAULT;
+					if (!enc_err_printed_r)
+					{
+						Uart_Error("Encoder R lost, brake");
+						enc_err_printed_r = 1;
+					}
+				}
+			}
+			else { frozen_cnt_r = 0; enc_err_printed_r = 0; }
+			prev_raw_r = raw;
+
+			/* 速度跳变检测：相邻 5ms 变化 >50rpm → 噪声/干扰 */
+			{
+				static int16_t prev_speed_l, prev_speed_r;
+				int16_t jump;
+
+				jump = motor_left.cur_speed_enc - prev_speed_l;
+				prev_speed_l = motor_left.cur_speed_enc;
+				if ((jump > 1500 || jump < -1500) && motor_left.target_speed_enc != 0
+				    && !enc_err_printed_l)
+				{
+					motor_left.target_speed_enc = 0;
+					motor_left.error_code |= MOTOR_ERROR_ENC_LOSS;
+					motor_left.status |= MOTOR_STATUS_FAULT;
+					Uart_Error("Encoder L glitch, brake");
+					enc_err_printed_l = 1;
+				}
+
+				jump = motor_right.cur_speed_enc - prev_speed_r;
+				prev_speed_r = motor_right.cur_speed_enc;
+				if ((jump > 1500 || jump < -1500) && motor_right.target_speed_enc != 0
+				    && !enc_err_printed_r)
+				{
+					motor_right.target_speed_enc = 0;
+					motor_right.error_code |= MOTOR_ERROR_ENC_LOSS;
+					motor_right.status |= MOTOR_STATUS_FAULT;
+					Uart_Error("Encoder R glitch, brake");
+					enc_err_printed_r = 1;
+				}
+			}
+		}
+
+		/* ── 堵转检测：目标≥2rpm、速度≈0、持续 200ms ── */
+		{
+			static uint16_t stall_cnt_l, stall_cnt_r;
+			static uint8_t  stall_printed_l, stall_printed_r;
+
+			if ((motor_left.target_speed_enc > 20 || motor_left.target_speed_enc < -20)
+			    && (motor_left.cur_speed_enc < 10 && motor_left.cur_speed_enc > -10))
+			{
+				if (++stall_cnt_l > 40U)
+				{
+					motor_left.target_speed_enc = 0;
+					motor_left.error_code |= MOTOR_ERROR_STALL;
+					motor_left.status |= MOTOR_STATUS_FAULT;
+					if (!stall_printed_l)
+					{
+						Uart_Error("Motor L stall, brake");
+						stall_printed_l = 1;
+					}
+				}
+			}
+			else
+			{
+				stall_cnt_l = 0;
+				stall_printed_l = 0;
+			}
+
+			if ((motor_right.target_speed_enc > 20 || motor_right.target_speed_enc < -20)
+			    && (motor_right.cur_speed_enc < 10 && motor_right.cur_speed_enc > -10))
+			{
+				if (++stall_cnt_r > 40U)
+				{
+					motor_right.target_speed_enc = 0;
+					motor_right.error_code |= MOTOR_ERROR_STALL;
+					motor_right.status |= MOTOR_STATUS_FAULT;
+					if (!stall_printed_r)
+					{
+						Uart_Error("Motor R stall, brake");
+						stall_printed_r = 1;
+					}
+				}
+			}
+			else
+			{
+				stall_cnt_r = 0;
+				stall_printed_r = 0;
+			}
+		}
 	}
 
 	/* ── 左电机 ── */

@@ -30,7 +30,7 @@
 | Start | startup_stm32f10x_md.s, core_cm3.c, system_stm32f10x.c | 启动文件 + CMSIS |
 | Library | SPL 全部外设库 | ADC/CAN/DMA/GPIO/TIM/USART 等 |
 | System | Delay.c/h, sysclock.c/h | 精确延时 + 周期调度 |
-| Mod | Mod_Comm_Can.c/h, Mod_Motor.c/h, Mod_Usart.c/h | 模块层（业务封装） |
+| Mod | Mod_Comm_Can.c/h, Mod_Motor.c/h, Mod_Usart.c/h, Mod_Watchdog.c/h | 模块层（业务封装） |
 | component | queue.c/h, pid/pid.c/h | 环形队列 + PID 控制器 |
 | protocol | CAN_Protocol.h | CAN ID 位域定义 |
 | driver | drv_can.c/h, drv_motor.c/h, drv_usart.c/h | 底层驱动 |
@@ -276,3 +276,11 @@ Delay_s(x);    // 秒延时
 - 故障处理统一用状态机
 - 驱动层前缀 `drv_`，模块层前缀 `Mod_`，任务层前缀 `Task_`
 - 注释使用中文，UTF-8 编码
+- **严格分层调用**：不允许跨层 include
+  ```
+  User/main  →  Task  →  Mod  →  drv
+                     ↘ Mod ← component（组件可被任务/模块层引用）
+  ```
+  - `User/main` 和 `task/` 只能 `#include "Mod_*.h"`，禁止直接引用 `drv_*.h`
+  - `Mod/` 可以引用 `drv_*.h`、`component/*.h`、`System/*.h`
+  - `protocol/CAN_Protocol.h` 全局可用（纯数据定义，无依赖）

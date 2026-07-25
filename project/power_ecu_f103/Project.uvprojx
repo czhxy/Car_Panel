@@ -709,6 +709,16 @@
               <FileType>5</FileType>
               <FilePath>.\Mod\Mod_Motor.h</FilePath>
             </File>
+            <File>
+              <FileName>Mod_Watchdog.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Mod\Mod_Watchdog.c</FilePath>
+            </File>
+            <File>
+              <FileName>Mod_Watchdog.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\Mod\Mod_Watchdog.h</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
@@ -778,6 +788,16 @@
               <FileName>drv_motor.c</FileName>
               <FileType>1</FileType>
               <FilePath>.\driver\drv_motor.c</FilePath>
+            </File>
+            <File>
+              <FileName>drv_iwdg.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\driver\drv_iwdg.c</FilePath>
+            </File>
+            <File>
+              <FileName>drv_iwdg.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\driver\drv_iwdg.h</FilePath>
             </File>
           </Files>
         </Group>

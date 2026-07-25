@@ -59,9 +59,7 @@ void Usart_Rx_Event(const uint8_t *buf, uint16_t len)
 	frame.len = (uint8_t)copy_len;
 
 	if (!Queue_Put(&UsartRxQueue, &frame))
-	{
-		uart_rx_err_count++;  /* 队列满，丢弃 */
-	}
+		uart_rx_err_count++;
 }
 
 /* Usart_Rx_Process() — 主循环 20ms 调用
@@ -116,10 +114,7 @@ void Usart_Tx_Event(const uint8_t *data, uint16_t len)
 	for (i = 0; i < len; i++)
 	{
 		if (!Queue_Put(&UsartTxQueue, (void *)&data[i]))
-		{
 			uart_tx_err_count++;
-			/* 继续尝试后续字节，不跳出循环 */
-		}
 	}
 }
 
@@ -202,4 +197,21 @@ void Uart_Error(const char *msg)
 		Queue_Put(&UsartTxQueue, &cr);
 		Queue_Put(&UsartTxQueue, &lf);
 	}
+}
+
+/* ===== 串口输出封装（供 task 层调用，遵守分层规则）===== */
+
+void Mod_Usart_SendByte(uint8_t b)
+{
+	Usart_SendByte(b);
+}
+
+void Mod_Usart_SendString(const char *s)
+{
+	Usart_SendString(s);
+}
+
+void Mod_Usart_SendData(const uint8_t *p, uint16_t n)
+{
+	Usart_SendData(p, n);
 }
