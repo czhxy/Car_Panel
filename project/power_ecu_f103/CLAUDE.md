@@ -19,7 +19,7 @@
 
 ## 当前状态概要
 
-CAN 通信基础设施已完整实现并修复（TX/RX 双队列、中断接收、SCE 错误恢复、多周期调度框架）。电机驱动、CAN 协议帧组装、串口日志、故障保护尚未实现。
+左电机全链路已验证：PID 转速闭环 + CAN 控制帧收发 + 心跳帧 + CAN 超时保护。右电机代码保留但硬件未接线。串口控制台支持在线调参和 VOFA+ 波形输出。
 
 **详细进度 → [`HANDOFF.md`](./HANDOFF.md)**
 
@@ -31,7 +31,7 @@ CAN 通信基础设施已完整实现并修复（TX/RX 双队列、中断接收�
 | Library | SPL 全部外设库 | ADC/CAN/DMA/GPIO/TIM/USART 等 |
 | System | Delay.c/h, sysclock.c/h | 精确延时 + 周期调度 |
 | Mod | Mod_Comm_Can.c/h, Mod_Motor.c/h, Mod_Usart.c/h | 模块层（业务封装） |
-| component | queue.c/h | 环形队列 |
+| component | queue.c/h, pid/pid.c/h | 环形队列 + PID 控制器 |
 | protocol | CAN_Protocol.h | CAN ID 位域定义 |
 | driver | drv_can.c/h, drv_motor.c/h, drv_usart.c/h | 底层驱动 |
 | task | task_comm_can.c/h, task_motor_ctl.c/h, task_uart.c/h | 任务调度 |
@@ -77,11 +77,11 @@ STM32F103                         TB6612FNG
 │          │              │                      │
 │ PA8 ─────┼─────────────→│ PWMA       AO1 ──────┼────────→ MG513(左) M+
 │ PA4 ─────┼─────────────→│ AIN1       AO2 ──────┼────────→ MG513(左) M-
-│          │  GND ───────→│ AIN2                  │
+│ PB0 ─────┼─────────────→│ AIN2                  │
 │          │              │                      │
 │ PB8 ─────┼─────────────→│ PWMB       BO1 ──────┼────────→ MG513(右) M+
 │ PB9 ─────┼─────────────→│ BIN1       BO2 ──────┼────────→ MG513(右) M-
-│          │  GND ───────→│ BIN2                  │
+│ PA5 ─────┼─────────────→│ BIN2                  │（预留，未接线）
 │          │              │                      │
 │          │  5V ────────→│ STBY        VM ──────┼── 7.4V（稳压模块）
 │          │              │              VCC ─────┼── 5V（稳压模块）
@@ -99,7 +99,7 @@ STM32F103                         TB6612FNG
 └──────────┘              └──────────────────────┘
 ```
 
-> **关键**：TB6612FNG 仅一片。STBY 硬接 VCC(5V) 始终使能，AIN2/BIN2 硬接 GND。单电机启停通过 PWM=0（刹车）实现。PB0、PA5 已释放为可用引脚。
+> **关键**：TB6612FNG 仅一片。STBY 硬接 VCC(5V) 始终使能。IN1/IN2 由 MCU 双 GPIO 控制正反转。PB0(AIN2) 已占用，PA5(BIN2) 预留。
 
 ### MG513 电机线序（六线引出，编码器集成）
 
@@ -118,24 +118,25 @@ STM32F103                         TB6612FNG
 |---|---|---|
 | PWMA | PA8 (TIM1_CH1) | 左电机 PWM |
 | AIN1 | PA4 (GPIO 推挽) | 左电机方向 |
-| AIN2 | GND | 低侧固定接地 |
+| AIN2 | PB0 (GPIO 推挽) | 左电机反方向 |
 | PWMB | PB8 (TIM4_CH3) | 右电机 PWM |
 | BIN1 | PB9 (GPIO 推挽) | 右电机方向 |
-| BIN2 | GND | 低侧固定接地 |
+| BIN2 | PA5 (GPIO 推挽) | 右电机反方向（预留） |
 | STBY | **VCC (5V)** | 硬拉高，始终使能 |
 | VM | 7.4V（稳压模块） | 电机驱动动力电 |
 | VCC | 5V（稳压模块） | 芯片逻辑电源 |
 | GND | GND（共地） | 参考地 |
 
-### TB6612FNG 控制真值表（STBY=VCC 始终使能，AIN2/BIN2=GND）
+### TB6612FNG 控制真值表（STBY=VCC，双 GPIO 控制 IN1/IN2）
 
-| AIN1/BIN1 (DIR) | PWMA/PWMB | 输出 | 电机状态 |
-|---|---|---|---|
-| H (1) | PWM 占空比 | H 桥正向驱动 | **正转** |
-| L (0) | PWM 占空比 | H 桥反向驱动 | **反转** |
-| X | 0 (CCR=0) | 下管导通对地 | **刹车** |
+| IN1 | IN2 | PWM | 输出 | 电机状态 |
+|---|---|---|---|---|
+| H | L | 占空比 | OUT1=H, OUT2=L | **正转** |
+| L | H | 占空比 | OUT1=L, OUT2=H | **反转** |
+| L | L | X | 下管导通 | **刹车** |
+| H | H | X | 下管导通 | 刹车（不使用） |
 
-> A/B 两通道逻辑一致。单独刹停某电机写 PWM=0 即可，不影响另一通道。
+> IN1/IN2 由 `drv_motor_set_pwm()` 根据 duty 正负自动切换，PWM=0 时统一设为 IN1=L/IN2=L 刹车。
 
 ### 其他外设
 
@@ -153,19 +154,18 @@ STM32F103                         TB6612FNG
 
 | 引脚 | 原用途 | 现在状态 |
 |---|---|---|
-| PB0 | 左电机 EN/STBY | **已释放**，可用于其他功能 |
-| PA5 | 右电机 EN/STBY | **已释放**，可用于其他功能 |
+| PA5 | 右电机 BIN2 | **预留**，右电机 BIN2 未接线 |
 
 ### 电机规格
 
 | 参数 | 值 |
 |---|---|
 | 型号 | MG513 直流减速电机（集成 AB 相编码器） |
-| 额定电压 | 7.4V（2S 锂电） |
-| 减速比 | 1:20 |
+| 额定电压 | 12V（3S 锂电） |
+| 减速比 | 1:28 |
 | 编码器 | 霍尔 A/B 双相，13 PPR |
 | 编码器供电 | 5V |
-| 满圈计数 | 13 × 20 = 260 CPR（实测有效值，理论4×待排查） |
+| 满圈计数 | 13 × 4 × 28 = 1456 CPR（4× 编码器模式） |
 
 ### 驱动芯片规格（TB6612FNG）
 
@@ -177,21 +177,21 @@ STM32F103                         TB6612FNG
 | 峰值电流 | 3.2A |
 | PWM 频率 | 最高 100kHz，当前用 20kHz |
 | 保护 | 过流/过热/欠压锁定 |
-| 控制模式 | IN/IN：PWMA=A 路 PWM, AIN1=DIR, AIN2=GND |
+| 控制模式 | IN/IN：PWMA/IN1/IN2 双 GPIO 控制正反转 |
 
 ## 接线注意事项
 
 1. **单 TB6612FNG**：A 通道驱动左电机，B 通道驱动右电机
 2. **STBY 硬接 VCC(5V)**：芯片始终使能，不用 MCU 控制
-3. **AIN2/BIN2 硬接 GND**：方向完全由 AIN1/BIN1 的 H/L 控制
-4. **单电机启停**：通过 PWM=0（下管导通刹车）实现，不操作 GPIO。`drv_motor_set_enable(0)` 即为 PWM 清零
-5. **空闲引脚**：PB0、PA5 已释放，可用作其他外设
+3. **IN1/IN2 双 GPIO**：`drv_motor_set_pwm()` 按 TB6612 真值表自动控制正反转/刹车
+4. **单电机启停**：PWM=0 + IN1=L + IN2=L 刹车
+5. **PB0/AIN2**：已占用（左电机），PA5/BIN2 预留（右电机未接）
 6. **编码器上拉**：PA0/PA1/PA6/PA7 已配 IPU（内部上拉），信号弱时外加 10kΩ 上拉到 3.3V
 7. **共地**：电池负极、稳压模块 GND、STM32 GND、TB6612 GND、编码器 GND 全部连通
 8. **VM 端建议并联** 100μF/25V 电解 + 0.1μF 陶瓷电容（靠近芯片）
 9. **PWM 频率 20kHz**，超出人耳范围，无啸叫
-10. **TB6612FNG VM 最高 13.5V**，切勿超压
-11. **编码器 VCC 为 5V**，切勿接 7.4V — MG513 编码器独立供电，非电机电压
+10. **TB6612FNG VM 最高 13.5V**，3S 电池满电 12.6V 安全
+11. **编码器 VCC 为 5V**，切勿接电池电压 — 编码器独立供电
 
 ## CAN 协议（须与显示域对齐）
 
@@ -204,12 +204,11 @@ CAN ID 位域定义参见 `./protocol/CAN_Protocol.h`：
 
 | 方向 | Mode ID | 周期 | 说明 |
 |---|---|---|---|
-| 发送 | 0x110 (STATUS_MOTOR) func=0x00 | 20ms | 左电机状态：转速、电流、编码器角度 |
-| 发送 | 0x110 (STATUS_MOTOR) func=0x01 | 20ms | 右电机状态：转速、电流、编码器角度 |
-| 发送 | 0x101 (ALERT) / 自定 | 按需 | 故障诊断信息 |
-| 发送 | 0x320 (HEARTBEAT) | 500ms | 心跳帧 |
-| 接收 | 0x020 (CTRL_LF) | 50ms | 左电机控制指令 |
-| 接收 | 0x021 (CTRL_RF) | 50ms | 右电机控制指令 |
+| 发送 | 0x110 (STATUS_MOTOR) func=0x00 | 20ms（交替） | 左电机状态：转速、电流、编码器角度 |
+| 发送 | 0x110 (STATUS_MOTOR) func=0x01 | 20ms（交替） | 右电机状态：转速、电流、编码器角度 |
+| 发送 | 0x320 (HEARTBEAT) | 500ms | 心跳帧 `0x1080C800` |
+| 接收 | 0x020 (CTRL_LF) | 事件驱动 | 左电机控制指令 `0x04480800` |
+| 接收 | 0x021 (CTRL_RF) | 事件驱动 | 右电机控制指令 |
 
 ## 现有可用组件
 
@@ -241,12 +240,10 @@ Delay_s(x);    // 秒延时
 | 周期 | 标志位 | 主循环中使用 |
 |---|---|---|
 | 1ms | `tpf.task_period_1ms` | — |
-| 5ms | `tpf.task_period_5ms` | `Task_Motor_Ctl()` |
-| 10ms | `tpf.task_period_10ms` | CAN TX/RX |
-| 20ms | `tpf.task_period_20ms` | UART TX/RX |
-| 100ms | `tpf.task_period_100ms` | — |
-| 200ms | `tpf.task_period_200ms` | — |
-| 500ms | `tpf.task_period_500ms` | —（心跳帧） |
+| 5ms | `tpf.task_period_5ms` | 编码器 + PID + CAN 超时 + VOFA |
+| 10ms | `tpf.task_period_10ms` | CAN TX（循环排空）/ RX + 电机状态帧 |
+| 20ms | `tpf.task_period_20ms` | UART TX / RX |
+| 500ms | `tpf.task_period_500ms` | 心跳帧 0x320 |
 | 1000ms | `tpf.task_period_1000ms` | — |
 
 ### 4. CAN 中断与处理函数
@@ -256,6 +253,7 @@ Delay_s(x);    // 秒延时
 | CAN RX0 (FIFO0) | `USB_LP_CAN1_RX0_IRQHandler` | `USB_LP_CAN1_RX0_IRQHandler` | `driver/drv_can.c` |
 | CAN SCE | `CAN1_SCE_IRQHandler` | `CAN1_SCE_IRQHandler` | `driver/drv_can.c` |
 | SysTick | `SysTick_Handler` | `SysTick_Handler` → `SysClock_Cb()` | `System/sysclock.c` |
+| USART1 | `USART1_IRQHandler` | RXNE + IDLE 不定长帧接收 | `driver/drv_usart.c` |
 
 ## 与显示域 ECU 的依赖关系
 

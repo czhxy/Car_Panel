@@ -169,3 +169,37 @@ static void Usart_SendLine(const char *s)
 	Usart_SendString(s);
 	Usart_SendString("\r\n");
 }
+
+/* ===== 错误日志：通过 TX 队列统一推送 ===== */
+
+/**
+ * Uart_Error(msg) — 推送错误信息到 TX 队列
+ * 由 20ms UART TX 任务统一消费发送，不阻塞调用方。
+ * 自动追加 \r\n，调用方只需传纯文本。
+ */
+void Uart_Error(const char *msg)
+{
+	uint16_t i;
+	if (msg == NULL) return;
+
+	/* 前缀 "[ERR] " */
+	const char prefix[] = "[ERR] ";
+	for (i = 0; i < sizeof(prefix) - 1; i++)
+	{
+		if (!Queue_Put(&UsartTxQueue, (void *)&prefix[i])) return;
+	}
+
+	/* 消息正文 */
+	while (*msg)
+	{
+		if (!Queue_Put(&UsartTxQueue, (void *)msg)) return;
+		msg++;
+	}
+
+	/* 换行 */
+	{
+		uint8_t cr = '\r', lf = '\n';
+		Queue_Put(&UsartTxQueue, &cr);
+		Queue_Put(&UsartTxQueue, &lf);
+	}
+}

@@ -9,6 +9,9 @@
 #define MOTOR_STATUS_ENABLE  0x02u   /* 已使能 */
 #define MOTOR_STATUS_FAULT   0x80u   /* 故障 */
 
+/* 故障码 */
+#define MOTOR_ERROR_CAN_TIMEOUT  0x0001u   /* CAN 控制帧 200ms 超时 */
+
 /* 电机数据中枢：RX(控制帧)写目标值，drv_motor 以后填实测值，TX(状态/心跳)读 */
 typedef struct motor_struct_type{
 	/* 来自显示域控制帧的目标值（RX 解析写入，×10 编码省去浮点） */

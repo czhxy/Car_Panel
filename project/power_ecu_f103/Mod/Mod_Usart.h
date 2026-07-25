@@ -28,4 +28,7 @@ void Usart_Tx_Process(void);
 /* ---- 命令解析（弱符号，业务层可覆盖）---- */
 void Usart_ParseCommand(const char *cmd);
 
+/* ---- 错误日志：通过 TX 队列统一推送，20ms 周期消费 ---- */
+void Uart_Error(const char *msg);
+
 #endif

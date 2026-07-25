@@ -30,19 +30,24 @@ bool Can_Tx_Event(CanTxMsg TxMsg)
 
 CanTxMsg TxPack;
 CanRxMsg RxPack;
-uint8_t  Can_Tx_Process(void)
+uint8_t Can_Tx_Process(void)
 {
 	uint8_t mb;
-	if(Queue_Query(&CanTxQueue,&TxPack))
+	uint8_t send_cnt = 0;        /* 本周期已发送帧数 */
+
+	/* 循环出队直到队列空或邮箱满（CAN_NO_MB），
+	 * F103 有 3 个 TX 邮箱，每帧 ~130µs，10ms 内可排空大量积压 */
+	while (send_cnt < 8 && Queue_Query(&CanTxQueue, &TxPack))
 	{
-		mb = CAN_Transmit(CAN1,&TxPack);
-		if(mb != CAN_NO_MB)
+		mb = CAN_Transmit(CAN1, &TxPack);
+		if (mb == CAN_NO_MB)
 		{
-			Queue_Get(&CanTxQueue,&TxPack);
+			break;               /* 3 个邮箱都忙，下周期再试 */
 		}
-		return mb;
+		Queue_Get(&CanTxQueue, &TxPack);
+		send_cnt++;
 	}
-	return CAN_TxStatus_NoMailBox;
+	return send_cnt;
 }
 
 bool Can_Rx_Event(CanRxMsg RxMsg)

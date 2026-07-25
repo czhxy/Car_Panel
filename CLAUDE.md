@@ -9,7 +9,7 @@
 | ECU | MCU | 职责 | 当前状态 |
 |---|---|---|---|
 | 显示域 | STM32F429IGT6 @ 180MHz | Bootloader/YMODEM OTA、SPI LCD (ILI9341V)、LVGL UI、CAN 通信 | CAN 通信完整，SPI LCD/UI 待开发 |
-| 动力域 | STM32F103C8T6 @ 72MHz | 双电机编码器测速、PWM 电机控制、CAN 上报 | 双电机驱动+CAN 帧已完成，PID 闭环待实现 |
+| 动力域 | STM32F103C8T6 @ 72MHz | 双电机编码器测速、PWM 电机控制、CAN 上报 | 左电机全链路已验证（PID+CAN+超时保护），右电机待接线 |
 
 通信：CAN 500kbps / 29-bit 扩展帧。
 
@@ -77,7 +77,7 @@ Car_Panel/
   docs/                  设计文档
   project/
     display_ecu_f429/    显示域 ECU（STM32F429, FreeRTOS, 当前主力开发）
-    power_ecu_f103/      动力域 ECU（STM32F103, 裸机, CAN 基础设施已完成）
+    power_ecu_f103/      动力域 ECU（STM32F103, 裸机, 左电机全链路已验证）
 ```
 
 ## 编译要点
@@ -99,6 +99,10 @@ Car_Panel/
 ## 参考文档
 
 - 完整方案：`docs/Car_Panel_F429_Project_Plan.md`
+- 动力域参考：
+  - 串口命令：`project/power_ecu_f103/docs/uart_commands.md`
+  - CAN 帧说明：`project/power_ecu_f103/docs/can_motor_control.md`
+  - VOFA+ 调参：`project/power_ecu_f103/docs/vofa_pid_tuning_guide.md`
 - 真 AB 分区设计：`project/display_ecu_f429/ab_partition_design.md`
 - CCM/DMA 规范：`project/display_ecu_f429/ccm_dma_guideline.md`
 - 变更记录：`project/display_ecu_f429/change_*.md`

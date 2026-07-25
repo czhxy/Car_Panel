@@ -212,7 +212,7 @@ void Usart_ParseCommand(const char *cmd)
 			int16_t spd = parse_i16(cmd + 8);
 			get_motor(side)->target_speed_enc = spd;
 			Usart_SendByte(side_char(side));
-			Usart_SendString(" target: ");
+			Usart_SendByte(':');
 			uart_put_i16(spd);
 			Usart_SendString("\r\n");
 			return;
@@ -228,7 +228,7 @@ void Usart_ParseCommand(const char *cmd)
 		{
 			get_motor(side)->target_speed_enc = 0;
 			Usart_SendByte(side_char(side));
-			Usart_SendString(" motor stopped\r\n");
+			Usart_SendString(" STOP\r\n");
 			return;
 		}
 
@@ -237,7 +237,7 @@ void Usart_ParseCommand(const char *cmd)
 		{
 			motor_left.target_speed_enc  = 0;
 			motor_right.target_speed_enc = 0;
-			Usart_SendString("All motors stopped\r\n");
+			Usart_SendString("ALL STOP\r\n");
 			return;
 		}
 	}
@@ -254,7 +254,6 @@ void Usart_ParseCommand(const char *cmd)
 	}
 	if (strcmp(cmd, "status") == 0)
 	{
-		Usart_SendString("--- Motor Status ---\r\n");
 		print_motor_line('l', &motor_left);
 		print_motor_line('r', &motor_right);
 		return;
@@ -284,14 +283,14 @@ void Usart_ParseCommand(const char *cmd)
 			pid_debug_enabled = 1;
 			pid_debug_side    = (side == 'l' || side == 'L') ? 0 : 1;
 			Usart_SendByte(side_char(side));
-			Usart_SendString(" PID debug ON (100ms)\r\n");
+			Usart_SendString(" PID ON\r\n");
 			return;
 		}
 	}
 	if (strcmp(cmd, "pid off") == 0)
 	{
 		pid_debug_enabled = 0;
-		Usart_SendString("PID debug OFF\r\n");
+		Usart_SendString("PID OFF\r\n");
 		return;
 	}
 
@@ -347,14 +346,14 @@ void Usart_ParseCommand(const char *cmd)
 			vofa_side       = (side == 'l' || side == 'L') ? 0 : 1;
 			pid_debug_enabled = 0;  /* 互斥：关文本 PID 打印 */
 			Usart_SendByte(side_char(side));
-			Usart_SendString(" VOFA+ waveform ON (5ms)\r\n");
+			Usart_SendString(" VOFA ON\r\n");
 			return;
 		}
 	}
 	if (strcmp(cmd, "vofa off") == 0)
 	{
 		vofa_enabled = 0;
-		Usart_SendString("VOFA+ waveform OFF\r\n");
+		Usart_SendString("VOFA OFF\r\n");
 		return;
 	}
 
@@ -368,19 +367,11 @@ void Usart_ParseCommand(const char *cmd)
 	/* ── help ── */
 	if (strcmp(cmd, "help") == 0)
 	{
-		Usart_SendString("====== Motor Control Commands ======\r\n");
-		Usart_SendString("motor l/r <spd>   - set motor speed (rpm*10)\r\n");
-		Usart_SendString("motor l/r stop    - stop single motor\r\n");
-		Usart_SendString("motor all stop    - stop both motors\r\n");
-		Usart_SendString("status [l/r]      - show motor status\r\n");
-		Usart_SendString("pid l/r show      - show PID parameters\r\n");
-		Usart_SendString("pid l/r on        - toggle PID debug (100ms)\r\n");
-		Usart_SendString("pid off           - stop PID debug\r\n");
-		Usart_SendString("pid l/r kp/ki/kd <val> - set PID gain\r\n");
-		Usart_SendString("vofa l/r on       - start VOFA+ waveform\r\n");
-		Usart_SendString("vofa off          - stop VOFA+ waveform\r\n");
-		Usart_SendString("echo <msg>        - echo message\r\n");
-		Usart_SendString("help              - show this help\r\n");
+		Usart_SendString("=== Commands ===\r\n");
+		Usart_SendString("motor l/r <spd>|stop  motor all stop\r\n");
+		Usart_SendString("status [l/r]          pid l/r show|on|kp/ki/kd\r\n");
+		Usart_SendString("pid off               vofa l/r on|off\r\n");
+		Usart_SendString("echo <msg>            help\r\n");
 		return;
 	}
 

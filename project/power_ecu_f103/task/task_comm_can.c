@@ -4,6 +4,7 @@
 #include "drv_usart.h"
 #include "sysclock.h"
 #include <string.h>
+#include <stdio.h>
 
 void Task_Comm_Can_Init(void)
 {
@@ -37,23 +38,40 @@ void TaskCanMotor_RxCallback(CanRxMsg motor_pack)
 			if (motor_pack.DLC >= 4)
 			{
 				/* 显示域实际线序(小端): data[0..1]=speed(rpm×10), data[2..3]=angle(°×10) */
-				motor_left.target_speed_enc = (int16_t)((uint16_t)motor_pack.Data[0]
-				                                      | ((uint16_t)motor_pack.Data[1] << 8));
+				int16_t spd = (int16_t)((uint16_t)motor_pack.Data[0]
+				                      | ((uint16_t)motor_pack.Data[1] << 8));
+				motor_left.target_speed_enc = spd;
 				motor_left.target_angle_enc = (int16_t)((uint16_t)motor_pack.Data[2]
 				                                      | ((uint16_t)motor_pack.Data[3] << 8));
 				motor_left.rx_ctrl_count++;
 				motor_left.last_ctrl_ms = (uint32_t)sysclock_get_ms();
+				motor_left.error_code &= (uint16_t)(~MOTOR_ERROR_CAN_TIMEOUT);
+				motor_left.status &= (uint8_t)(~MOTOR_STATUS_FAULT);
+				/* CAN RX 回显：确认解析正确 */
+				{
+					char buf[20];
+					int n = snprintf(buf, sizeof(buf), "CAN L:%d\r\n", (int)spd);
+					if (n > 0 && n < (int)sizeof(buf))
+						Usart_SendData((uint8_t *)buf, (uint16_t)n);
+				}
 			}
 			break;
 		case MODE_ID_CTRL_RF:   /* 0x021 右前轮转向+轮毂控制（显示域→动力域） */
 			if (motor_pack.DLC >= 4)
 			{
-				motor_right.target_speed_enc = (int16_t)((uint16_t)motor_pack.Data[0]
-				                                       | ((uint16_t)motor_pack.Data[1] << 8));
+				int16_t spd = (int16_t)((uint16_t)motor_pack.Data[0]
+				                      | ((uint16_t)motor_pack.Data[1] << 8));
+				motor_right.target_speed_enc = spd;
 				motor_right.target_angle_enc = (int16_t)((uint16_t)motor_pack.Data[2]
 				                                       | ((uint16_t)motor_pack.Data[3] << 8));
 				motor_right.rx_ctrl_count++;
 				motor_right.last_ctrl_ms = (uint32_t)sysclock_get_ms();
+				{
+					char buf[20];
+					int n = snprintf(buf, sizeof(buf), "CAN R:%d\r\n", (int)spd);
+					if (n > 0 && n < (int)sizeof(buf))
+						Usart_SendData((uint8_t *)buf, (uint16_t)n);
+				}
 			}
 			break;
 		case MODE_ID_QUERY_FAST:   /* 0x080 链路测试：回显显示域串口透传过来的数据（测试脚手架） */
@@ -70,12 +88,13 @@ void TaskCanMotor_RxCallback(CanRxMsg motor_pack)
 
 
 /* ===== TX：心跳帧 0x320（500ms）=====
- * 用 MODE_ID_HEARTBEAT(0x320)，不用 CAN_HEARTBEAT_ID 宏（它嵌的是 0x000）。
+ * ID = 0x1080C800 (prio=4, src=2, dst=0, mode=0x320)
  * 广播本机状态/运行时长/故障码供显示域监测存活。 */
 void Task_Can_Heartbeat_Updata(void)
 {
 	CanTxMsg tx;
 	CanHeartbeatData hb;
+	static uint8_t first_run = 1;
 
 	memset(&tx, 0, sizeof(tx));
 	memset(&hb, 0, sizeof(hb));
@@ -92,4 +111,17 @@ void Task_Can_Heartbeat_Updata(void)
 	memcpy(tx.Data, &hb, sizeof(hb));
 
 	Can_Tx_Event(tx);
+
+	/* 首次发送时打印 HB ID 用于校验 */
+	if (first_run)
+	{
+		char buf[48];
+		int n;
+		first_run = 0;
+		n = snprintf(buf, sizeof(buf),
+			"HB TX: ID=0x%08lX up=%u st=0x%02X\r\n",
+			(unsigned long)tx.ExtId, (unsigned int)hb.uptime, (unsigned int)hb.status);
+		if (n > 0 && n < (int)sizeof(buf))
+			Usart_SendData((uint8_t *)buf, (uint16_t)n);
+	}
 }

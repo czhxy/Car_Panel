@@ -1,4 +1,6 @@
 #include "Mod_Motor.h"
+#include "sysclock.h"
+#include "Mod_Usart.h"
 
 /* 全局电机状态实例：零初始化，目标值由 CAN RX 写入，实测值由 drv_motor 填充 */
 Motor_Struct motor_left  = {0};
@@ -44,6 +46,51 @@ void Mod_Motor_Process(void)
 		Pid_Init(&pid_left,  1.0f, 0.1f, 0.3f, -PWM_MAX, PWM_MAX);
 		Pid_Init(&pid_right, 1.0f, 0.1f, 0.3f, -PWM_MAX, PWM_MAX);
 		pid_inited = 1;
+	}
+
+	/* ── CAN 超时保护：200ms 无控制帧则强制刹车 ── */
+	{
+		uint32_t now = (uint32_t)sysclock_get_ms();
+		static uint8_t timeout_printed_l;   /* 防止重复打印 */
+		static uint8_t timeout_printed_r;
+
+		/* 左电机 */
+		if (motor_left.last_ctrl_ms > 0
+		    && (now - motor_left.last_ctrl_ms) > 200U
+		    && motor_left.target_speed_enc != 0)
+		{
+			motor_left.target_speed_enc = 0;
+			motor_left.error_code |= MOTOR_ERROR_CAN_TIMEOUT;
+			motor_left.status |= MOTOR_STATUS_FAULT;
+			if (!timeout_printed_l)
+			{
+				Uart_Error("CAN L timeout, brake");
+				timeout_printed_l = 1;
+			}
+		}
+		else
+		{
+			timeout_printed_l = 0;  /* CAN 帧恢复，允许下次打印 */
+		}
+
+		/* 右电机 */
+		if (motor_right.last_ctrl_ms > 0
+		    && (now - motor_right.last_ctrl_ms) > 200U
+		    && motor_right.target_speed_enc != 0)
+		{
+			motor_right.target_speed_enc = 0;
+			motor_right.error_code |= MOTOR_ERROR_CAN_TIMEOUT;
+			motor_right.status |= MOTOR_STATUS_FAULT;
+			if (!timeout_printed_r)
+			{
+				Uart_Error("CAN R timeout, brake");
+				timeout_printed_r = 1;
+			}
+		}
+		else
+		{
+			timeout_printed_r = 0;
+		}
 	}
 
 	/* ── 左电机 ── */

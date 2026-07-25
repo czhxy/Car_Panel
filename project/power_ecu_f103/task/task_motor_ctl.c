@@ -44,9 +44,18 @@ static void Motor_Can_Tx_Event(Motor_Struct *m, uint8_t func_field)
 
 void Task_Can_Motor_Updata(void)
 {
-	/* TX 左电机状态帧 0x110, func=0x00 */
-	Motor_Can_Tx_Event(&motor_left, 0x00U);
+	/* 20ms 周期、左右交替发送，防止挤占心跳帧 */
+	static uint8_t tick;
+	tick++;
 
-	/* TX 右电机状态帧 0x110, func=0x01 */
-	Motor_Can_Tx_Event(&motor_right, 0x01U);
+	if (tick & 1U)
+	{
+		/* 奇数周期：左电机状态帧 0x110, func=0x00 */
+		Motor_Can_Tx_Event(&motor_left, 0x00U);
+	}
+	else
+	{
+		/* 偶数周期：右电机状态帧 0x110, func=0x01 */
+		Motor_Can_Tx_Event(&motor_right, 0x01U);
+	}
 }
