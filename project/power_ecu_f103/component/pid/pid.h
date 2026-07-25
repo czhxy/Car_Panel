@@ -3,6 +3,8 @@
 
 #include <stdint.h>
 
+#define PID_DT  0.005f        /* 采样周期 5ms，单位秒 */
+
 /* PID 控制器结构体 */
 typedef struct {
 	float kp;               /* 比例系数 */

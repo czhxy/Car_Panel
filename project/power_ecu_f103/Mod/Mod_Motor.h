@@ -30,6 +30,10 @@ extern Motor_Struct motor_left;   /* 左电机状态（Mod_Motor.c 定义） */
 extern Motor_Struct motor_right;  /* 右电机状态（Mod_Motor.c 定义） */
 #define motor motor_left          /* 向后兼容：旧代码中的 motor 即左电机 */
 
+/* PID 控制器实例（导出供串口调参访问） */
+extern PidController pid_left;
+extern PidController pid_right;
+
 void Mod_Motor_Init(void);
 void Mod_Motor_Update(void);       /* 周期调用 drv_motor_update，更新左右实测值 */
 void Mod_Motor_Process(void);

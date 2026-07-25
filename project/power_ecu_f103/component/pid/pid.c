@@ -53,8 +53,8 @@ int16_t Pid_Compute(PidController *pid, float setpoint, float feedback)
 	/* P 项 */
 	p_term = pid->kp * error;
 
-	/* I 项：累加积分并限制 */
-	pid->integral += error;
+	/* I 项：累加积分（dt 缩放，5ms 周期）并限制 */
+	pid->integral += error * PID_DT;
 	if (pid->integral >  pid->integral_limit) pid->integral =  pid->integral_limit;
 	if (pid->integral < -pid->integral_limit) pid->integral = -pid->integral_limit;
 	i_term = pid->ki * pid->integral;

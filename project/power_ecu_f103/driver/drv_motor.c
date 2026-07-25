@@ -29,13 +29,20 @@ void drv_motor_init(uint8_t motor_id)
 		                       RCC_APB2Periph_AFIO, ENABLE);
 		RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM2, ENABLE);
 
-		/* DIR (PA4) — 推挽输出 */
-		gpio.GPIO_Pin   = MOTOR_L_DIR_PIN;
+		/* IN1 (PA4) — 推挽输出，默认低 */
+		gpio.GPIO_Pin   = MOTOR_L_IN1_PIN;
 		gpio.GPIO_Mode  = GPIO_Mode_Out_PP;
 		gpio.GPIO_Speed = GPIO_Speed_50MHz;
-		GPIO_Init(MOTOR_L_DIR_PORT, &gpio);
+		GPIO_Init(MOTOR_L_IN1_PORT, &gpio);
+		GPIO_ResetBits(MOTOR_L_IN1_PORT, MOTOR_L_IN1_PIN);
 
-		GPIO_SetBits(MOTOR_L_DIR_PORT, MOTOR_L_DIR_PIN);   /* DIR = H */
+		/* IN2 (PB0) — 推挽输出，默认低 */
+		RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB, ENABLE);
+		gpio.GPIO_Pin   = MOTOR_L_IN2_PIN;
+		gpio.GPIO_Mode  = GPIO_Mode_Out_PP;
+		gpio.GPIO_Speed = GPIO_Speed_50MHz;
+		GPIO_Init(MOTOR_L_IN2_PORT, &gpio);
+		GPIO_ResetBits(MOTOR_L_IN2_PORT, MOTOR_L_IN2_PIN);
 
 		/* PA8 (TIM1_CH1) — 复用推挽输出 */
 		gpio.GPIO_Pin   = MOTOR_L_PWM_PIN;
@@ -73,6 +80,9 @@ void drv_motor_init(uint8_t motor_id)
 		                           TIM_ICPolarity_Rising,
 		                           TIM_ICPolarity_Rising);
 
+		/* 数字滤波：IC1F=IC2F=0xF（~3.5μs 毛刺抑制，防止 GPIO 切换干扰编码器） */
+		TIM2->CCMR1 |= (uint16_t)(0x0F << 4) | (uint16_t)(0x0F << 12);
+
 		tim_base.TIM_Period    = 0xFFFF;
 		tim_base.TIM_Prescaler = 0;
 		TIM_TimeBaseInit(TIM2, &tim_base);
@@ -82,7 +92,7 @@ void drv_motor_init(uint8_t motor_id)
 
 		last_enc_cnt_l = 0;
 	}
-	else /* MOTOR_ID_RIGHT */
+	else if (motor_id == MOTOR_ID_RIGHT)
 	{
 		/* ===== 右电机：TIM4_CH3 PWM + TIM3 编码器 ===== */
 
@@ -93,13 +103,19 @@ void drv_motor_init(uint8_t motor_id)
 		RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM3 |
 		                       RCC_APB1Periph_TIM4, ENABLE);
 
-		/* DIR (PB9) — 推挽输出 */
-		gpio.GPIO_Pin   = MOTOR_R_DIR_PIN;
+		/* IN1 (PB9) — 推挽输出，默认低 */
+		gpio.GPIO_Pin   = MOTOR_R_IN1_PIN;
 		gpio.GPIO_Mode  = GPIO_Mode_Out_PP;
 		gpio.GPIO_Speed = GPIO_Speed_50MHz;
-		GPIO_Init(MOTOR_R_DIR_PORT, &gpio);
+		GPIO_Init(MOTOR_R_IN1_PORT, &gpio);
+		GPIO_ResetBits(MOTOR_R_IN1_PORT, MOTOR_R_IN1_PIN);
 
-		GPIO_SetBits(MOTOR_R_DIR_PORT, MOTOR_R_DIR_PIN);   /* DIR = H */
+		/* IN2 (PA5) — 推挽输出，默认低 */
+		gpio.GPIO_Pin   = MOTOR_R_IN2_PIN;
+		gpio.GPIO_Mode  = GPIO_Mode_Out_PP;
+		gpio.GPIO_Speed = GPIO_Speed_50MHz;
+		GPIO_Init(MOTOR_R_IN2_PORT, &gpio);
+		GPIO_ResetBits(MOTOR_R_IN2_PORT, MOTOR_R_IN2_PIN);
 
 		/* PB8 (TIM4_CH3) — 复用推挽输出 */
 		gpio.GPIO_Pin   = MOTOR_R_PWM_PIN;
@@ -136,6 +152,9 @@ void drv_motor_init(uint8_t motor_id)
 		                           TIM_ICPolarity_Rising,
 		                           TIM_ICPolarity_Rising);
 
+		/* 数字滤波：IC1F=IC2F=0xF（~3.5μs 毛刺抑制，防止 GPIO 切换干扰编码器） */
+		TIM3->CCMR1 |= (uint16_t)(0x0F << 4) | (uint16_t)(0x0F << 12);
+
 		tim_base.TIM_Period    = 0xFFFF;
 		tim_base.TIM_Prescaler = 0;
 		TIM_TimeBaseInit(TIM3, &tim_base);
@@ -149,12 +168,18 @@ void drv_motor_init(uint8_t motor_id)
 
 /* ───────────────────────────────────────────
  *  drv_motor_set_pwm
- *  duty: -999 ~ +999，正值 DIR=H、负值 DIR=L
+ *
+ *  TB6612 IN/IN 模式方向控制（IN1/IN2 双 GPIO）：
+ *   正转: IN1=H, IN2=L, PWM 占空比
+ *   反转: IN1=L, IN2=H, PWM 占空比
+ *   刹车: IN1=L, IN2=L, PWM=0
+ *
+ *  duty: -999 ~ +999，正值正转、负值反转
  * ─────────────────────────────────────────── */
 void drv_motor_set_pwm(uint8_t motor_id, int16_t duty)
 {
-	GPIO_TypeDef *dir_port;
-	uint16_t      dir_pin;
+	GPIO_TypeDef *in1_port, *in2_port;
+	uint16_t      in1_pin,  in2_pin;
 	uint16_t      ccr;
 
 	/* 限幅 */
@@ -163,34 +188,45 @@ void drv_motor_set_pwm(uint8_t motor_id, int16_t duty)
 
 	if (motor_id == MOTOR_ID_LEFT)
 	{
-		dir_port = MOTOR_L_DIR_PORT;
-		dir_pin  = MOTOR_L_DIR_PIN;
+		in1_port = MOTOR_L_IN1_PORT;
+		in1_pin  = MOTOR_L_IN1_PIN;
+		in2_port = MOTOR_L_IN2_PORT;
+		in2_pin  = MOTOR_L_IN2_PIN;
 	}
 	else
 	{
-		dir_port = MOTOR_R_DIR_PORT;
-		dir_pin  = MOTOR_R_DIR_PIN;
+		in1_port = MOTOR_R_IN1_PORT;
+		in1_pin  = MOTOR_R_IN1_PIN;
+		in2_port = MOTOR_R_IN2_PORT;
+		in2_pin  = MOTOR_R_IN2_PIN;
 	}
 
-	if (duty >= 0)
+	if (duty > 0)
 	{
-		GPIO_SetBits(dir_port, dir_pin);
+		/* 正转：IN1=H, IN2=L */
+		GPIO_SetBits(in1_port, in1_pin);
+		GPIO_ResetBits(in2_port, in2_pin);
 		ccr = (uint16_t)((uint32_t)duty * PWM_TIM_ARR / PWM_MAX);
+	}
+	else if (duty < 0)
+	{
+		/* 反转：IN1=L, IN2=H */
+		GPIO_ResetBits(in1_port, in1_pin);
+		GPIO_SetBits(in2_port, in2_pin);
+		ccr = (uint16_t)((uint32_t)(-duty) * PWM_TIM_ARR / PWM_MAX);
 	}
 	else
 	{
-		GPIO_ResetBits(dir_port, dir_pin);
-		ccr = (uint16_t)((uint32_t)(-duty) * PWM_TIM_ARR / PWM_MAX);
+		/* 刹车：IN1=L, IN2=L */
+		GPIO_ResetBits(in1_port, in1_pin);
+		GPIO_ResetBits(in2_port, in2_pin);
+		ccr = 0;
 	}
 
 	if (motor_id == MOTOR_ID_LEFT)
-	{
 		TIM_SetCompare1(TIM1, ccr);
-	}
 	else
-	{
 		TIM_SetCompare3(TIM4, ccr);
-	}
 }
 
 /* ───────────────────────────────────────────
@@ -293,4 +329,28 @@ void drv_motor_update(uint8_t motor_id)
 			p_motor->status &= (uint8_t)(~MOTOR_STATUS_RUN);
 		}
 	}
+}
+
+/* ───────────────────────────────────────────
+ *  drv_motor_get_raw_enc — 读取原始编码器计数值
+ *  返回有符号 16bit，用于调试时观察计数器原始值
+ * ─────────────────────────────────────────── */
+int16_t drv_motor_get_raw_enc(uint8_t motor_id)
+{
+	if (motor_id == MOTOR_ID_LEFT)
+		return (int16_t)TIM_GetCounter(TIM2);
+	else
+		return (int16_t)TIM_GetCounter(TIM3);
+}
+
+/* ───────────────────────────────────────────
+ *  drv_motor_enc_tim_cmd — 启停编码器定时器
+ *  用于诊断：禁用单路 TIM 后，若该 TIM 计数仍变 → 硬件串扰
+ * ─────────────────────────────────────────── */
+void drv_motor_enc_tim_cmd(uint8_t motor_id, FunctionalState NewState)
+{
+	if (motor_id == MOTOR_ID_LEFT)
+		TIM_Cmd(TIM2, NewState);
+	else
+		TIM_Cmd(TIM3, NewState);
 }

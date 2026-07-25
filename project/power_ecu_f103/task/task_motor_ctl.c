@@ -1,4 +1,5 @@
 #include "task_motor_ctl.h"
+#include "task_uart.h"
 
 void Task_Motor_Ctl_Init(void)
 {
@@ -7,11 +8,13 @@ void Task_Motor_Ctl_Init(void)
 
 void Task_Motor_Ctl(void)
 {
-	/* 每 5ms 刷新左右编码器实测值，写入 motor_left/motor_right 全局结构体 */
+	/* 每 5ms：刷新编码器实测值 + PID 控制 */
 	Mod_Motor_Update();
-	
-	//根据显示域下发的值对电机进行操控，目前先实现对转速的稳定操控，使用pid
 	Mod_Motor_Process();
+
+	/* VOFA+ FireWater 波形输出（与 PID 计算同频，直接发送绕过 TX 队列） */
+	if (vofa_enabled)
+		Vofa_SendFrame();
 }
 
 /** 组装并发送单电机状态帧 0x110 */
@@ -41,8 +44,9 @@ static void Motor_Can_Tx_Event(Motor_Struct *m, uint8_t func_field)
 
 void Task_Can_Motor_Updata(void)
 {
-	/* ===== TX 电机状态帧 0x110（10ms）=====
-	 * func_field 区分电机：0x00=左, 0x01=右 */
-	Motor_Can_Tx_Event(&motor_left,  0x00U);
+	/* TX 左电机状态帧 0x110, func=0x00 */
+	Motor_Can_Tx_Event(&motor_left, 0x00U);
+
+	/* TX 右电机状态帧 0x110, func=0x01 */
 	Motor_Can_Tx_Event(&motor_right, 0x01U);
 }
