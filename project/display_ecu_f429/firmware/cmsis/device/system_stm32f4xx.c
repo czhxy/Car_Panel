@@ -358,8 +358,11 @@
 #ifdef BOOTLOADER
 /* Bootloader: 向量表位于 Flash 基址 0x08000000 */
 #define VECT_TAB_OFFSET  0x00
+#elif defined(APP_SLOT_B)
+/* App B: 向量表偏移到 0x08080000（真 AB 的 B 槽镜像）*/
+#define VECT_TAB_OFFSET  0x00080000
 #else
-/* App: 向量表偏移到 0x08020000 */
+/* App A: 向量表偏移到 0x08020000 */
 #define VECT_TAB_OFFSET  0x00020000
 #endif
 /*!< Vector Table base offset field.

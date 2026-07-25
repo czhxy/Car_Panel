@@ -1,0 +1,61 @@
+#include "task_motor_ctl.h"
+#include "task_uart.h"
+
+void Task_Motor_Ctl_Init(void)
+{
+	Mod_Motor_Init();
+}
+
+void Task_Motor_Ctl(void)
+{
+	/* 每 5ms：刷新编码器实测值 + PID 控制 */
+	Mod_Motor_Update();
+	Mod_Motor_Process();
+
+	/* VOFA+ FireWater 波形输出（与 PID 计算同频，直接发送绕过 TX 队列） */
+	if (vofa_enabled)
+		Vofa_SendFrame();
+}
+
+/** 组装并发送单电机状态帧 0x110 */
+static void Motor_Can_Tx_Event(Motor_Struct *m, uint8_t func_field)
+{
+	CanTxMsg tx;
+	CanStatusMotor st;
+
+	memset(&tx, 0, sizeof(tx));
+	memset(&st, 0, sizeof(st));
+
+	st.motor_speed   = m->cur_speed_enc;
+	st.motor_current = m->cur_current;
+	st.encoder_angle = m->cur_angle_enc;
+	st.status        = m->status;
+	st.temperature   = m->temperature;
+
+	tx.ExtId = CAN_ID_BUILD(CAN_PRIO_REALTIME, CAN_SELF_ADDR, CAN_ADDR_MAINBOARD,
+	                        CAN_FTYPE_NORMAL, MODE_ID_STATUS_MOTOR, func_field);
+	tx.IDE = CAN_Id_Extended;
+	tx.RTR = CAN_RTR_Data;
+	tx.DLC = 8;
+	memcpy(tx.Data, &st, sizeof(st));
+
+	Can_Tx_Event(tx);
+}
+
+void Task_Can_Motor_Updata(void)
+{
+	/* 20ms 周期、左右交替发送，防止挤占心跳帧 */
+	static uint8_t tick;
+	tick++;
+
+	if (tick & 1U)
+	{
+		/* 奇数周期：左电机状态帧 0x110, func=0x00 */
+		Motor_Can_Tx_Event(&motor_left, 0x00U);
+	}
+	else
+	{
+		/* 偶数周期：右电机状态帧 0x110, func=0x01 */
+		Motor_Can_Tx_Event(&motor_right, 0x01U);
+	}
+}

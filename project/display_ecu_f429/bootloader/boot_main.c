@@ -82,11 +82,10 @@ int main(void)
     }
 
     // ===== 未能跳转或用户选择升级, 直接启动 OTA =====
-    printf("[BOOT] Entering upgrade mode, starting YMODEM...\r\n");
-    ota_ymodem_start();
+    printf("[BOOT] Entering upgrade mode.\r\n");
     while (1) {
+        ota_ymodem_start();   /* 真 AB：写非活跃槽，活跃槽保持不变 */
         printf("[BOOT] OTA failed, retry in 3s...\r\n");
         Delay_ms(3000);
-        ota_ymodem_start();
     }
 }

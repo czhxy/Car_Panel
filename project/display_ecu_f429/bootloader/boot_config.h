@@ -19,9 +19,9 @@
 #define APP_A_ADDR              0x08020000U
 #define APP_A_SIZE              0x00060000U  // 384KB
 
-// App B: 512KB (Sector 8-11, 4×128KB)
+// App B: 384KB (Sector 8-10, 3×128KB, 与 App A 等大)
 #define APP_B_ADDR              0x08080000U
-#define APP_B_SIZE              0x00080000U  // 512KB
+#define APP_B_SIZE              0x00060000U  // 384KB
 
 // YMODEM 参数
 #define YMODEM_PACKET_SIZE      1024        // YMODEM-1K

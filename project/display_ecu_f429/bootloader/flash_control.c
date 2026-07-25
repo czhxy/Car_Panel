@@ -77,6 +77,33 @@ int flash_if_erase(uint32_t start_addr, uint32_t size)
     return 0;
 }
 
+// ===== Flash 内拷贝（A → B 方案：从 B 区搬运到 A 区） =====
+int flash_if_copy(uint32_t src_addr, uint32_t dst_addr, uint32_t len)
+{
+    uint32_t i;
+    uint32_t word_count = len / 4;
+
+    for (i = 0; i < word_count; i++) {
+        uint32_t word = *(volatile uint32_t *)(src_addr + i * 4);
+        if (flash_if_write_word(dst_addr + i * 4, word) != 0) {
+            return -1;
+        }
+    }
+
+    // 末尾不足 4 字节的零头按 Byte 写入
+    uint32_t remaining = len % 4;
+    if (remaining > 0) {
+        uint32_t base = word_count * 4;
+        for (i = 0; i < remaining; i++) {
+            uint8_t byte = *(volatile uint8_t *)(src_addr + base + i);
+            if (FLASH_ProgramByte(dst_addr + base + i, byte) != FLASH_COMPLETE) {
+                return -1;
+            }
+        }
+    }
+    return 0;
+}
+
 // ===== 写入一个 Word（4字节） =====
 int flash_if_write_word(uint32_t addr, uint32_t data)
 {

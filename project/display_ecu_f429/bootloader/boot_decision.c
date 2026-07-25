@@ -1,7 +1,11 @@
 /**
   ******************************************************************************
   * @file    boot_decision.c
-  * @brief   启动决策状态机 — 分区校验 / 回滚 / 活跃分区切换
+  * @brief   启动决策状态机 — 真 AB：按 active_partition 选址 / 切槽回滚 / 进入 OTA
+  *
+  *          真 AB 方案：A、B 两槽各存一份完整镜像，bootloader 按 active_partition
+  *          跳转活跃槽。新固件 OTA 写入【非活跃槽】并翻转 active；旧固件仍留在
+  *          原活跃槽，作为回滚目标。故回滚 = 切回另一槽，无需 384KB Flash 搬运。
   ******************************************************************************
   */
 
@@ -9,59 +13,64 @@
 #include "boot_config.h"
 #include "boot_jump.h"
 #include "ota_params.h"
+#include "flash_control.h"
 #include <stdio.h>
 
 // g_ota_param 在 boot_main.c 中定义
 extern ota_param_t g_ota_param;
 
-// ===== 分区地址辅助 =====
+// ===== 当前活跃槽地址（按 active_partition 选择） =====
 uint32_t get_active_addr(void)
 {
-    return (g_ota_param.active_partition == APP_A_ACTIVE)
-           ? APP_A_ADDR : APP_B_ADDR;
+    return (g_ota_param.active_partition == APP_A_ACTIVE) ? APP_A_ADDR : APP_B_ADDR;
 }
 
-uint32_t get_inactive_addr(void)
+// ===== 当前活跃槽的元数据 =====
+static uint32_t active_size(void)
 {
     return (g_ota_param.active_partition == APP_A_ACTIVE)
-           ? APP_B_ADDR : APP_A_ADDR;
+           ? g_ota_param.app_a_size : g_ota_param.app_b_size;
 }
-
-uint32_t get_inactive_size(void)
+static uint32_t active_crc(void)
 {
     return (g_ota_param.active_partition == APP_A_ACTIVE)
-           ? APP_B_SIZE : APP_A_SIZE;
+           ? g_ota_param.app_a_crc32 : g_ota_param.app_b_crc32;
 }
 
-// ===== 切换活跃分区 =====
-void swap_active_partition(void)
+// ===== 回滚：切到另一槽（真 AB 无需 Flash 搬运） =====
+static int rollback_to_other(void)
 {
-    g_ota_param.active_partition =
-        (g_ota_param.active_partition == APP_A_ACTIVE)
-        ? APP_B_ACTIVE : APP_A_ACTIVE;
-}
+    uint8_t  other  = (g_ota_param.active_partition == APP_A_ACTIVE)
+                      ? APP_B_ACTIVE : APP_A_ACTIVE;
+    uint32_t o_addr = (other == APP_A_ACTIVE) ? APP_A_ADDR : APP_B_ADDR;
+    uint32_t o_size = (other == APP_A_ACTIVE)
+                      ? g_ota_param.app_a_size : g_ota_param.app_b_size;
+    uint32_t o_crc  = (other == APP_A_ACTIVE)
+                      ? g_ota_param.app_a_crc32 : g_ota_param.app_b_crc32;
 
-// ===== 回滚到旧分区 =====
-int perform_rollback(void)
-{
-    printf("[BOOT] ROLLBACK triggered!\r\n");
+    printf("[BOOT] Rollback candidate: %s.\r\n",
+           other == APP_A_ACTIVE ? "App A" : "App B");
 
-    swap_active_partition();
-    uint32_t old_addr = get_active_addr();
-
-    printf("[BOOT] Rolling back to 0x%08X\r\n", (unsigned int)old_addr);
-
-    if (!partition_is_valid(old_addr)) {
-        printf("[BOOT] FATAL: Old partition also invalid!\r\n");
-        printf("[BOOT] Entering safe mode (wait for upgrade)...\r\n");
+    if (!partition_is_valid(o_addr)) {
+        printf("[BOOT] Other slot SP invalid, cannot roll back.\r\n");
         return -1;
     }
 
-    g_ota_param.ota_state = OTA_STATE_IDLE;
-    g_ota_param.boot_count = 0;
-    ota_params_save(&g_ota_param);
+    if (o_size == 0 || o_size == 0xFFFFFFFF) {
+        // 另一槽无元数据（如出厂首烧的槽）-> 仅凭 SP 合法性信任
+        printf("[BOOT] Other slot has no metadata, trust by SP.\r\n");
+    } else {
+        uint32_t calc = crc32_flash(o_addr, o_size);
+        if (calc != o_crc) {
+            printf("[BOOT] Other slot CRC mismatch (0x%08X vs 0x%08X).\r\n",
+                   (unsigned int)calc, (unsigned int)o_crc);
+            return -1;
+        }
+    }
 
-    printf("[BOOT] Rollback OK.\r\n");
+    g_ota_param.active_partition = other;
+    printf("[BOOT] Rollback to %s.\r\n",
+           other == APP_A_ACTIVE ? "App A" : "App B");
     return 0;
 }
 
@@ -71,18 +80,14 @@ int boot_decision(void)
     switch (g_ota_param.ota_state) {
 
     case OTA_STATE_IDLE:
-        // IDLE 状态无需回写 Flash，直接检查活跃分区
         if (partition_is_valid(get_active_addr())) {
             return 1;
-        } else {
-            printf("[BOOT] No valid app in active partition.\r\n");
-            return 0;
         }
+        printf("[BOOT] Active slot invalid.\r\n");
+        return 0;
 
     case OTA_STATE_COMPLETE:
         {
-            uint32_t new_addr = get_inactive_addr();
-
             g_ota_param.boot_count++;
             ota_params_save(&g_ota_param);
 
@@ -90,51 +95,50 @@ int boot_decision(void)
                    g_ota_param.boot_count,
                    g_ota_param.max_boot_count);
 
-            if (g_ota_param.boot_count > g_ota_param.max_boot_count) {
-                printf("[BOOT] Max boot attempts exceeded.\r\n");
-                if (perform_rollback() == 0) {
-                    return 1;
-                }
+            uint32_t addr = get_active_addr();
+            uint32_t size = active_size();
+            uint32_t crc  = active_crc();
+
+            if (size == 0 || size == 0xFFFFFFFF) {
+                printf("[BOOT] Active slot has no metadata, entering OTA.\r\n");
                 return 0;
             }
 
-            uint32_t new_size = (new_addr == APP_A_ADDR)
-                                ? g_ota_param.app_a_size
-                                : g_ota_param.app_b_size;
+            uint32_t calc_crc = crc32_flash(addr, size);
+            printf("[BOOT] CRC32: saved=0x%08X calc=0x%08X\r\n",
+                   (unsigned int)crc, (unsigned int)calc_crc);
 
-            if (new_size == 0 || new_size == 0xFFFFFFFF) {
-                printf("[BOOT] Invalid new firmware size (0x%08X).\r\n",
-                       (unsigned int)new_size);
-                perform_rollback();
-                return 1;
-            }
-
-            uint32_t calc_crc = crc32_flash(new_addr, new_size);
-            uint32_t saved_crc = (new_addr == APP_A_ADDR)
-                                 ? g_ota_param.app_a_crc32
-                                 : g_ota_param.app_b_crc32;
-
-            printf("[BOOT] CRC32 verify: saved=0x%08X calc=0x%08X\r\n",
-                   (unsigned int)saved_crc, (unsigned int)calc_crc);
-
-            if (calc_crc == saved_crc) {
-                printf("[BOOT] New firmware verified, switching partition.\r\n");
-                swap_active_partition();
-                g_ota_param.ota_state = OTA_STATE_IDLE;
+            if (calc_crc == crc) {
+                printf("[BOOT] Firmware verified OK.\r\n");
+                g_ota_param.ota_state  = OTA_STATE_IDLE;
                 g_ota_param.boot_count = 0;
                 ota_params_save(&g_ota_param);
                 return 1;
-            } else {
-                printf("[BOOT] CRC32 mismatch, rolling back.\r\n");
-                perform_rollback();
-                return 1;
             }
+
+            // CRC 失败，检查是否超限
+            if (g_ota_param.boot_count >= g_ota_param.max_boot_count) {
+                printf("[BOOT] Max boot attempts, rolling back to other slot...\r\n");
+                if (rollback_to_other() == 0) {
+                    g_ota_param.ota_state  = OTA_STATE_IDLE;
+                    g_ota_param.boot_count = 0;
+                    ota_params_save(&g_ota_param);
+                    return 1;
+                }
+                printf("[BOOT] Rollback failed, entering OTA mode.\r\n");
+                return 0;
+            }
+
+            // 未超限：重启重试（boot_count 已持久化，重启后递增；超限则切槽回滚）
+            printf("[BOOT] CRC mismatch (attempt %u/%u), reboot to retry...\r\n",
+                   g_ota_param.boot_count, g_ota_param.max_boot_count);
+            NVIC_SystemReset();
+            return 0;   /* 不可达，保险 */
         }
 
     case OTA_STATE_FAILED:
-        printf("[BOOT] Previous upgrade failed, rolling back.\r\n");
-        perform_rollback();
-        return 1;
+        printf("[BOOT] Previous upgrade failed, entering OTA mode.\r\n");
+        return 0;
 
     default:
         printf("[BOOT] Unknown OTA state %u, entering upgrade mode.\r\n",

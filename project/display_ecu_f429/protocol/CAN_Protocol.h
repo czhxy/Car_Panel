@@ -8,72 +8,114 @@ extern "C" {
 #include <stdint.h>
 #include <stdbool.h>
 
+/* ================================================================
+ * 29 ä½æ‰©å±•å¸§ ID åè®®å®šä¹‰ï¼ˆç»Ÿä¸€åè®®å¤´ï¼Œå…¨å·¥ç¨‹å”¯ä¸€æ¥æºï¼‰
+ *
+ * ID [28:26] 3 bit  ä¼˜å…ˆçº§        æ•°å€¼è¶Šå°è¶Šé«˜
+ * ID [25:22] 4 bit  æºåœ°å€
+ * ID [21:18] 4 bit  ç›®æ ‡åœ°å€       (0 = å¹¿æ’­)
+ * ID [17:16] 2 bit  å¸§ç±»å‹         0=æ™®é€š 1=OTA 2=ç»„åˆ 3=é¢„ç•™
+ * ID [15: 6] 10 bit mode_id       åŠŸèƒ½/å‘½ä»¤å·
+ * ID [ 5: 0] 6 bit  åŠŸèƒ½å­—æ®µ
+ * ================================================================ */
+
+/* ---- ä½åç§»å®šä¹‰ ---- */
+#define CAN_ID_OFFSET_PRIO    26
+#define CAN_ID_OFFSET_SRC     22
+#define CAN_ID_OFFSET_DST     18
+#define CAN_ID_OFFSET_FTYPE   16
+#define CAN_ID_OFFSET_MODE     6
+#define CAN_ID_OFFSET_FUNC     0
+
+#define CAN_ID_MASK_PRIO      0x7
+#define CAN_ID_MASK_SRC       0xF
+#define CAN_ID_MASK_DST       0xF
+#define CAN_ID_MASK_FTYPE     0x3
+#define CAN_ID_MASK_MODE      0x3FF
+#define CAN_ID_MASK_FUNC      0x3F
+
+/* ---- 29 ä½ ID æ„é€ å® ---- */
+#define CAN_ID_BUILD(prio, src, dst, ftype, mode, func) \
+    ((((uint32_t)(prio)  & CAN_ID_MASK_PRIO)  << CAN_ID_OFFSET_PRIO) | \
+     (((uint32_t)(src)   & CAN_ID_MASK_SRC)   << CAN_ID_OFFSET_SRC)  | \
+     (((uint32_t)(dst)   & CAN_ID_MASK_DST)   << CAN_ID_OFFSET_DST)  | \
+     (((uint32_t)(ftype) & CAN_ID_MASK_FTYPE) << CAN_ID_OFFSET_FTYPE)| \
+     (((uint32_t)(mode)  & CAN_ID_MASK_MODE)  << CAN_ID_OFFSET_MODE) | \
+     (((uint32_t)(func)  & CAN_ID_MASK_FUNC)  << CAN_ID_OFFSET_FUNC))
+
+/* ---- 29 ä½ ID è§£æå® ---- */
+#define CAN_ID_GET_PRIO(id)  (((id) >> CAN_ID_OFFSET_PRIO) & CAN_ID_MASK_PRIO)
+#define CAN_ID_GET_SRC(id)   (((id) >> CAN_ID_OFFSET_SRC)  & CAN_ID_MASK_SRC)
+#define CAN_ID_GET_DST(id)   (((id) >> CAN_ID_OFFSET_DST)  & CAN_ID_MASK_DST)
+#define CAN_ID_GET_FTYPE(id) (((id) >> CAN_ID_OFFSET_FTYPE) & CAN_ID_MASK_FTYPE)
+#define CAN_ID_GET_MODE(id)  (((id) >> CAN_ID_OFFSET_MODE) & CAN_ID_MASK_MODE)
+#define CAN_ID_GET_FUNC(id)  (((id) >> CAN_ID_OFFSET_FUNC) & CAN_ID_MASK_FUNC)
 
 /* ================================================================
-
- * Éè±¸µØÖ·¶¨Òå
+ * è®¾å¤‡åœ°å€å®šä¹‰
  * ================================================================ */
-#define CAN_ADDR_BROADCAST      0x0U    /* ¹ã²¥ */
-#define CAN_ADDR_MAINBOARD      0x1U    /* Ö÷°å */
-#define CAN_ADDR_MOTORBOARD     0x2U    /* µç»ú°å*/
+#define CAN_ADDR_BROADCAST      0x0U    /* å¹¿æ’­ */
+#define CAN_ADDR_MAINBOARD      0x1U    /* ä¸»æ¿ */
+#define CAN_ADDR_MOTORBOARD     0x2U    /* ç”µæœºæ¿ */
+#define CAN_ADDR_MAX            0x0FU   /* åœ°å€ä¸Šé™ */
 
+#define CAN_SELF_ADDR   CAN_ADDR_MAINBOARD
 
 /* ================================================================
-
- * ÓÅÏÈ¼¶¶¨Òå
+ * ä¼˜å…ˆçº§å®šä¹‰
  * ================================================================ */
-#define CAN_PRIO_EMERGENCY      0U      /* ½ô¼±£º¼±Í£¡¢È«¾ÖÉ²³µ¡¢¹ÊÕÏ±¨¾¯ */
-#define CAN_PRIO_REALTIME       1U      /* ÊµÊ±ÔË¶¯¿ØÖÆ */
-#define CAN_PRIO_QUERY_REPLY    2U      /* ²éÑ¯Ó¦´ğ */
-#define CAN_PRIO_ALERT          3U      /* Ö÷¶¯¸æ¾¯ÉÏ±¨ */
-#define CAN_PRIO_HEARTBEAT      4U      /* ĞÄÌø/ÔÚÏß */
-#define CAN_PRIO_CONFIG         5U      /* ²ÎÊıÅäÖÃ/µ÷ÊÔ */
+#define CAN_PRIO_EMERGENCY      0U      /* ç´§æ€¥ï¼ˆåœæ­¢ã€å…¨å±€åˆ¹è½¦ã€æ•…éšœä¸ŠæŠ¥ï¼‰ */
+#define CAN_PRIO_REALTIME       1U      /* å®æ—¶è¿åŠ¨æ§åˆ¶ */
+#define CAN_PRIO_QUERY_REPLY    2U      /* æŸ¥è¯¢åº”ç­” */
+#define CAN_PRIO_ALERT          3U      /* å¼‚å¸¸å‘Šè­¦ä¸ŠæŠ¥ */
+#define CAN_PRIO_HEARTBEAT      4U      /* å¿ƒè·³/åŒæ­¥ */
+#define CAN_PRIO_CONFIG         5U      /* å‚æ•°é…ç½®/è¯»å– */
 #define CAN_PRIO_OTA            6U      /* OTA */
+#define CAN_PRIO_MAX            7U      /* ä¼˜å…ˆçº§ä¸Šé™ */
 
 /* ================================================================
-
- * Ö¡ÀàĞÍ¶¨Òå
+ * å¸§ç±»å‹å®šä¹‰
  * ================================================================ */
-#define CAN_FTYPE_NORMAL        0U      /* ÆÕÍ¨Ö¡ */
-#define CAN_FTYPE_OTA           1U      /* OTAÊı¾İÖ¡ */
-#define CAN_FTYPE_COMBO         2U      /* ×éºÏÖ¡ */
+#define CAN_FTYPE_NORMAL        0U      /* æ™®é€šå¸§ */
+#define CAN_FTYPE_OTA           1U      /* OTA æ•°æ®å¸§ */
+#define CAN_FTYPE_COMBINED      2U      /* ç»„åˆå¸§ */
+#define CAN_FTYPE_RESERVED      3U      /* é¢„ç•™ */
 
 /* ================================================================
-
- * Mode ID ¶¨Òå
+ * Mode ID å®šä¹‰
  * ================================================================ */
-   /* ½ô¼±Ö¡ 0x000~0x01F */
-#define MODE_ID_ESTOP           0x000U  /* È«¾Ö¼±Í£ */
-#define MODE_ID_BRAKE           0x001U  /* È«¾ÖÉ²³µ */
-#define MODE_ID_FAULT_ALARM     0x002U  /* ¹ÊÕÏ±¨¾¯ */
+   /* ç´§æ€¥å¸§ 0x000~0x01F */
+#define MODE_ID_ESTOP           0x000U  /* å…¨å±€æ€¥åœ */
+#define MODE_ID_BRAKE           0x001U  /* å…¨å±€åˆ¹è½¦ */
+#define MODE_ID_FAULT_ALARM     0x002U  /* æ•…éšœæŠ¥è­¦ */
 
-/* Ëã·¨°åÖ¸Áî 0x020~0x07F */
-#define MODE_ID_CTRL_LF         0x020U  /* ×óÇ°Çı¶¯ÂÖ+¶æÂÖ¿ØÖÆ */
-#define MODE_ID_CTRL_RF         0x021U  /* ÓÒÇ°Çı¶¯ÂÖ+¶æÂÖ¿ØÖÆ */
-#define MODE_ID_CTRL_REAR       0x022U  /* ºóÇı¶¯ÂÖ¿ØÖÆ */
-#define MODE_ID_CTRL_BLADE      0x023U  /* µ¶ÅÌ¿ØÖÆ */
-#define MODE_ID_CTRL_EDGE       0x024U  /* ±ßÇĞ¿ØÖÆ */
-#define MODE_ID_INTERRUPT       0x025U  /* ÖĞ¶ÏÖ¡ */
-#define MODE_ID_ALERT_ACK       0x026U  /* ¸æ¾¯ACK */
+/* ç®—æ³•å¸§/æŒ‡ä»¤ 0x020~0x07F */
+#define MODE_ID_CTRL_LF         0x020U  /* å·¦å‰è½®è½¬å‘+è½®æ¯‚æ§åˆ¶ */
+#define MODE_ID_CTRL_RF         0x021U  /* å³å‰è½®è½¬å‘+è½®æ¯‚æ§åˆ¶ */
+#define MODE_ID_CTRL_REAR       0x022U  /* åè½®è½®æ¯‚æ§åˆ¶ */
+#define MODE_ID_CTRL_BLADE      0x023U  /* åˆ€ç›˜æ§åˆ¶ */
+#define MODE_ID_CTRL_EDGE       0x024U  /* è¾¹çº¿æ§åˆ¶ */
+#define MODE_ID_INTERRUPT       0x025U  /* ä¸­æ–­å¸§ */
+#define MODE_ID_ALERT_ACK       0x026U  /* å‘Šè­¦ACK */
 
-/* Ëã·¨°å²éÑ¯ 0x080~0x08F */
-#define MODE_ID_QUERY_FAST      0x080U  /* ¿ì°ü¹ã²¥²éÑ¯ */
-#define MODE_ID_QUERY_MID       0x081U  /* ÖĞ°ü²éÑ¯ */
-#define MODE_ID_QUERY_SLOW      0x082U  /* Âı°ü²éÑ¯ */
-#define MODE_ID_QUERY_LOG       0x083U  /* ÈÕÖ¾²éÑ¯ */
+/* ç®—æ³•æ•°æ®æŸ¥è¯¢ 0x080~0x08F */
+#define MODE_ID_QUERY_FAST      0x080U  /* é«˜é€Ÿå¹¿æ’­æŸ¥è¯¢ */
+#define MODE_ID_QUERY_MID       0x081U  /* ä¸­é€ŸæŸ¥è¯¢ */
+#define MODE_ID_QUERY_SLOW      0x082U  /* æ…¢é€ŸæŸ¥è¯¢ */
+#define MODE_ID_QUERY_LOG       0x083U  /* æ—¥å¿—æŸ¥è¯¢ */
 
-/* ¿ØÖÆ°åÍ¨ÓÃÖ¡ 0x100~0x10F */
-#define MODE_ID_ALERT           0x101U  /* Òì³£¸æ¾¯ */
-#define MODE_ID_FAST_DATA       0x102U  /* ¿ì°üÓ¦´ğÊı¾İÖ¡ */
-#define MODE_ID_MID_DATA        0x103U  /* ÖĞ°üÓ¦´ğÊı¾İÖ¡ */
-#define MODE_ID_SLOW_DATA       0x104U  /* Âı°üÓ¦´ğÊı¾İÖ¡ */
-#define MODE_ID_LOG_DATA        0x105U  /* ÈÕÖ¾Ó¦´ğÊı¾İÖ¡ */
+/* ä¸»æ§æ¿é€šä¿¡å¸§ 0x100~0x10F */
+#define MODE_ID_ALERT           0x101U  /* å¼‚å¸¸å‘Šè­¦ */
+#define MODE_ID_FAST_DATA       0x102U  /* é«˜é€Ÿåº”ç­”æ•°æ®å¸§ */
+#define MODE_ID_MID_DATA        0x103U  /* ä¸­é€Ÿåº”ç­”æ•°æ®å¸§ */
+#define MODE_ID_SLOW_DATA       0x104U  /* æ…¢é€Ÿåº”ç­”æ•°æ®å¸§ */
+#define MODE_ID_LOG_DATA        0x105U  /* æ—¥å¿—åº”ç­”æ•°æ®å¸§ */
 
-/* ¿ØÖÆ°å×´Ì¬ÉÏ±¨ 0x110~0x1FF */
-#define MODE_ID_STATUS_MOTOR    0x110U  /* µç»ú×´Ì¬ */
-#define MODE_ID_STATUS_MAIN     0x111U  /* Ö÷°å */
+/* ä¸»æ§æ¿çŠ¶æ€ä¸ŠæŠ¥ 0x110~0x1FF */
+#define MODE_ID_STATUS_MOTOR    0x110U  /* ç”µæœºçŠ¶æ€ */
+#define MODE_ID_STATUS_MAIN     0x111U  /* ä¸»æ¿çŠ¶æ€ */
 
-/* OTAÖ¸Áî 0x300~0x31F */
+/* OTA æŒ‡ä»¤ 0x300~0x31F */
 #define MODE_ID_OTA_START       0x300U
 #define MODE_ID_OTA_END         0x301U
 #define MODE_ID_OTA_ACK         0x302U
@@ -81,43 +123,41 @@ extern "C" {
 #define MODE_ID_OTA_EXIT        0x304U
 #define MODE_ID_OTA_REBOOT      0x305U
 
-/* ¹²ÓÃÖ¡ 0x320~0x33F */
-#define MODE_ID_HEARTBEAT       0x320U  /* ĞÄÌøÖ¡ */
+/* å¿ƒè·³å¸§ 0x320~0x33F */
+#define MODE_ID_HEARTBEAT       0x320U  /* å¿ƒè·³å¸§ */
 
 /* ================================================================
+ * é¢„ç½® CAN ID
+ * ================================================================ */
+#define CAN_TX_ID         CAN_ID_BUILD(CAN_PRIO_ALERT,     CAN_SELF_ADDR, CAN_ADDR_BROADCAST, CAN_FTYPE_NORMAL, 0x001, 0x01)
+#define CAN_HEARTBEAT_ID  CAN_ID_BUILD(CAN_PRIO_HEARTBEAT, CAN_SELF_ADDR, CAN_ADDR_BROADCAST, CAN_FTYPE_NORMAL, 0x000, 0x01)
 
- * 29Î» CAN ID ±à½âÂë
-   *
- * ID [28:26] 3Î» ÓÅÏÈ¼¶
- * ID [25:22] 4Î» Ô´µØÖ·
- * ID [21:18] 4Î» Ä¿±êµØÖ·
- * ID [17:16] 2Î» Ö¡ÀàĞÍ
- * ID [15: 6] 10Î» mode_id
- * ID [ 5: 0] 6Î» ¹¦ÄÜ×Ö¶Î
+/* ================================================================
+ * CanProtocolId â€” åè®® ID ç»“æ„åŒ–ç¼–è§£ç 
  * ================================================================ */
 
-/* ½âÂë½á¹¹Ìå */
+/* è§£ç ç»“æ„ä½“ */
 typedef struct {
-    uint8_t  priority;      /* [28:26] ÓÅÏÈ¼¶ */
-    uint8_t  src_addr;      /* [25:22] Ô´µØÖ· */
-    uint8_t  dst_addr;      /* [21:18] Ä¿±êµØÖ· */
-    uint8_t  frame_type;    /* [17:16] Ö¡ÀàĞÍ */
+    uint8_t  priority;      /* [28:26] ä¼˜å…ˆçº§ */
+    uint8_t  src_addr;      /* [25:22] æºåœ°å€ */
+    uint8_t  dst_addr;      /* [21:18] ç›®æ ‡åœ°å€ */
+    uint8_t  frame_type;    /* [17:16] å¸§ç±»å‹ */
     uint16_t mode_id;       /* [15: 6] Mode ID */
-    uint8_t  func_field;    /* [ 5: 0] ¹¦ÄÜ×Ö¶Î */
+    uint8_t  func_field;    /* [ 5: 0] åŠŸèƒ½å­—æ®µ */
 } CanProtocolId;
 
-/* ±àÂë£º½á¹¹Ìå ¡ú 29Î»ID */
+/* ç¼–ç ï¼šç»“æ„ä½“ â†’ 29 ä½ ID */
 static inline uint32_t CanProto_EncodeId(const CanProtocolId *id)
 {
-    return (((uint32_t)(id->priority  & 0x07U) << 26U) |
-            ((uint32_t)(id->src_addr  & 0x0FU) << 22U) |
-            ((uint32_t)(id->dst_addr  & 0x0FU) << 18U) |
+    return (((uint32_t)(id->priority   & 0x07U) << 26U) |
+            ((uint32_t)(id->src_addr   & 0x0FU) << 22U) |
+            ((uint32_t)(id->dst_addr   & 0x0FU) << 18U) |
             ((uint32_t)(id->frame_type & 0x03U) << 16U) |
-            ((uint32_t)(id->mode_id   & 0x3FFU) << 6U) |
+            ((uint32_t)(id->mode_id    & 0x3FFU) << 6U) |
             ((uint32_t)(id->func_field & 0x3FU)));
 }
 
-/* ½âÂë£º29Î»ID ¡ú ½á¹¹Ìå */
+/* è§£ç ï¼š29 ä½ ID â†’ ç»“æ„ä½“ */
 static inline void CanProto_DecodeId(uint32_t ext_id, CanProtocolId *id)
 {
     id->priority   = (uint8_t)((ext_id >> 26U) & 0x07U);
@@ -128,7 +168,7 @@ static inline void CanProto_DecodeId(uint32_t ext_id, CanProtocolId *id)
     id->func_field = (uint8_t)(ext_id & 0x3FU);
 }
 
-/* ¿ì½İ±àÂë£ºÆÕÍ¨Ö¡ */
+/* å¿«æ·æ„é€ ï¼šæ™®é€šå¸§ ID */
 static inline uint32_t CanProto_MakeId(uint8_t prio, uint8_t src, uint8_t dst,
                                         uint16_t mode_id)
 {
@@ -143,30 +183,28 @@ static inline uint32_t CanProto_MakeId(uint8_t prio, uint8_t src, uint8_t dst,
 }
 
 /* ================================================================
-
- * ¿ØÖÆÖ¸ÁîÊı¾İ½á¹¹£¨µç»ú£¬mode_id=0x020£©
- * [ËÙ¶ÈL, ËÙ¶ÈH, ¼ÓËÙ¶ÈL, ¼ÓËÙ¶ÈH, ½Ç¶ÈL, ½Ç¶ÈH, 0, 0]
+ * ç”µæœºæ§åˆ¶å¸§æ•°æ®è½½è·ç»“æ„ï¼ˆmode_id=0x020ï¼‰
+ * [é€Ÿåº¦L, é€Ÿåº¦H, ç”µæµL, ç”µæµH, è§’åº¦L, è§’åº¦H, 0, 0]
  * ================================================================ */
 typedef struct {
-	int16_t  	motor_speed;  	/* µç»ú×ªËÙ */
-  int16_t 	motor_current;	/* µç»úµçÁ÷ */
-	uint16_t reserved[2];
+    int16_t   motor_speed;       /* ç”µæœºè½¬é€Ÿ */
+    int16_t   motor_current;     /* ç”µæœºç”µæµ */
+    uint16_t  reserved[2];
 } CanCtrlMotor;
 
 /* ================================================================
-
- * ĞÄÌøÖ¡Êı¾İ (mode_id=0x320)
+ * å¿ƒè·³å¸§æ•°æ®è½½è·ç»“æ„ (mode_id=0x320)
  * [status, uptime_L, uptime_H, err_L, err_H, 0, 0, 0]
  * ================================================================ */
 typedef struct {
-	uint8_t  status;
-	uint16_t uptime;        /* ÔËĞĞÊ±¼ä(Ãë) */
-	uint16_t error_code;
-	uint8_t  reserved[3];
+    uint8_t   status;
+    uint16_t  uptime;            /* è¿è¡Œæ—¶é—´(ç§’) */
+    uint16_t  error_code;
+    uint8_t   reserved[3];
 } __attribute__((packed)) CanHeartbeatData;
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif
+#endif /* CAN_PROTOCOL_H__ */

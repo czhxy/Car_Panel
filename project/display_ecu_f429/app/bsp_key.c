@@ -42,10 +42,10 @@ void prvKeyScanTask(void * pvParameters)
 		sCurrKey1State = GPIO_ReadInputDataBit(KEY1_Port, KEY1_Pin);
 		sCurrKey2State = GPIO_ReadInputDataBit(KEY2_Port, KEY2_Pin);
 		if (sCurrKey1State == Bit_SET && sPrevKey1State == Bit_RESET) {
-				xSemaphoreGive(xKey1Sem);
+				if (xKey1Sem != NULL) xSemaphoreGive(xKey1Sem);   /* L4: 句柄存在才 give */
 		}
 		if (sCurrKey2State == Bit_SET && sPrevKey2State == Bit_RESET) {
-				xSemaphoreGive(xKey2Sem);
+				if (xKey2Sem != NULL) xSemaphoreGive(xKey2Sem);   /* L4: 句柄存在才 give */
 		}
 		sPrevKey1State = sCurrKey1State;
 		sPrevKey2State = sCurrKey2State;

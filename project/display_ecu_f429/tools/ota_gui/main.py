@@ -148,6 +148,15 @@ class OTAApp(_BaseTk):
         self.log_queue = queue.Queue()
         self.progress_queue = queue.Queue()
 
+        # 固件目录（fromelf 输出 bin 到 .uvprojx 同级目录即 mdk/）
+        self._firmware_dir = os.path.normpath(
+            os.path.join(BASE_DIR, "..", "..", "mdk")
+        )
+
+        # 芯片信息缓存
+        self._active_partition = None  # "App A" 或 "App B" 或 None
+        self._chip_info_cache = {}
+
         # 存储 PIL 图片引用（防止被 GC 回收）
         self._btn_images: dict = {}
 
@@ -267,6 +276,14 @@ class OTAApp(_BaseTk):
                                     relief=tk.FLAT, bd=0,
                                     width=fp["button_width"], padx=8, pady=5)
         self.browse_btn.pack(side=tk.LEFT)
+
+        # 自动选择按钮（根据芯片活跃分区选对应 bin）
+        self.auto_bin_btn = tk.Button(row1, text="自动选择",
+                                      command=self._auto_select_bin,
+                                      font=("Microsoft YaHei UI", fp["font_size"]),
+                                      relief=tk.FLAT, bd=0,
+                                      width=fp["button_width"], padx=8, pady=5)
+        self.auto_bin_btn.pack(side=tk.LEFT, padx=(6, 0))
 
         # 文件信息 / 拖拽提示
         self.file_info_label = tk.Label(self.file_frame,
@@ -423,6 +440,9 @@ class OTAApp(_BaseTk):
         self.file_info_label.configure(bg=t.get("card_bg"),
                                        fg=t.get("fg_secondary"))
         self._style_button(self.browse_btn, t.get("button_secondary_bg"),
+                           t.get("button_secondary_fg"), t.get("button_secondary_hover"),
+                           is_secondary=True)
+        self._style_button(self.auto_bin_btn, t.get("button_secondary_bg"),
                            t.get("button_secondary_fg"), t.get("button_secondary_hover"),
                            is_secondary=True)
 
@@ -584,6 +604,63 @@ class OTAApp(_BaseTk):
 
     # ======================== 文件操作 ========================
 
+    def _auto_select_bin(self):
+        """根据芯片活跃分区自动选择对应的固件文件。
+
+        真 AB 分区规则:
+        - MCU 运行 App A (partition=1) → 上位机应发送 app_b.bin (写入非活跃 B 槽)
+        - MCU 运行 App B (partition=2) → 上位机应发送 app.bin   (写入非活跃 A 槽)
+        """
+        if not self._active_partition:
+            # 没有缓存，尝试从固件目录直接查找
+            if os.path.isdir(self._firmware_dir):
+                # 优先级: 先找非活跃槽的 bin
+                candidates = []
+                for fname in ("app_b.bin", "app.bin"):
+                    candidate = os.path.join(self._firmware_dir, fname)
+                    if os.path.isfile(candidate):
+                        candidates.append((fname, candidate))
+                if not candidates:
+                    self._log("未在固件目录找到 .bin 文件，请先获取芯片信息或手动选择文件")
+                    messagebox.showwarning("未找到固件",
+                                           f"固件目录中未找到 .bin 文件:\n{self._firmware_dir}\n\n"
+                                           "请先点击「获取芯片信息」，或手动选择固件文件。")
+                    return
+                if len(candidates) == 1:
+                    self._log(f"自动选择: {candidates[0][1]}")
+                    self.file_path.set(candidates[0][1])
+                    return
+                # 两个都在，但没有芯片信息
+                self._log("未获取芯片信息，无法判断应发 app.bin 还是 app_b.bin")
+                messagebox.showinfo("需要芯片信息",
+                                    "请先点击「获取芯片信息」以确定 MCU 当前运行的槽位，\n"
+                                    "然后上位机会自动选择对应的固件文件。\n\n"
+                                    "或手动选择 .bin 文件。")
+                return
+
+        # rule: active=A → send app_b.bin; active=B → send app.bin
+        activeA = (self._active_partition == "App A")
+
+        if activeA:
+            target = "app_b.bin"
+            desc = "MCU 当前运行 App A，OTA 写入非活跃槽 B"
+        else:
+            target = "app.bin"
+            desc = "MCU 当前运行 App B，OTA 写入非活跃槽 A"
+
+        candidate = os.path.join(self._firmware_dir, target)
+        if not os.path.isfile(candidate):
+            self._log(f"未找到: {candidate}")
+            messagebox.showwarning("文件未找到",
+                                   f"{desc}\n\n"
+                                   f"需要: {target}\n"
+                                   f"但在固件目录中未找到:\n{self._firmware_dir}\n\n"
+                                   f"请先编译对应 Target 再重试。")
+            return
+
+        self._log(f"自动选择 ({desc}): {candidate}")
+        self.file_path.set(candidate)
+
     def _browse_file(self):
         """打开文件选择对话框"""
         path = filedialog.askopenfilename(
@@ -647,11 +724,31 @@ class OTAApp(_BaseTk):
 
         fname = os.path.basename(filepath)
         fsize = os.path.getsize(filepath)
+
+        # 校验：如果知道活跃分区，检查 bin 文件是否匹配目标槽
+        warn_msg = ""
+        if self._active_partition:
+            target_bin = "app_b.bin" if self._active_partition == "App A" else "app.bin"
+            if os.path.basename(filepath) != target_bin:
+                # 选错了 bin，给出警告
+                correct_bin = target_bin
+                warn_msg = (
+                    f"\n\n*** 警告: 文件可能不匹配当前槽位! ***\n"
+                    f"MCU 运行在 {self._active_partition}，\n"
+                    f"OTA 将写入非活跃槽，应发送 {correct_bin}，\n"
+                    f"但您选择了 {fname}。\n\n"
+                    f"如需自动选择，请取消后点击「自动选择」。\n"
+                    f"如确认继续，bootloader 的防错包机制会拦截错误文件。"
+                )
+        elif fname.startswith("app_b"):
+            self._log("提示: 选择了 app_b.bin，但未查询芯片信息，无法验证槽位匹配")
+
         answer = messagebox.askyesno(
             "确认升级",
             f"即将对 {port} 上的设备进行固件升级:\n\n"
             f"  文件: {fname}\n"
-            f"  大小: {fsize} 字节 ({fsize / 1024:.1f} KB)\n\n"
+            f"  大小: {fsize} 字节 ({fsize / 1024:.1f} KB)\n"
+            f"{warn_msg}\n"
             f"请确保设备已进入 OTA 模式。\n\n"
             f"确认开始升级？"
         )
@@ -747,6 +844,7 @@ class OTAApp(_BaseTk):
         self.baud_combo.config(state="disabled" if busy else "readonly")
         self.refresh_btn.config(state=state)
         self.browse_btn.config(state=state)
+        self.auto_bin_btn.config(state=state)
         self.file_entry.config(state=state)
         self.start_btn.config(state=state)
         self.cancel_btn.config(state=tk.NORMAL if busy else tk.DISABLED)
@@ -866,6 +964,15 @@ class OTAApp(_BaseTk):
         tm = self.chip_vars.get("query_time")
         if tm:
             tm.set(f"查询时间: {now_str}")
+
+        # 缓存芯片信息供 _auto_select_bin 使用
+        self._chip_info_cache = info
+        partition = info.get("active_partition", "未知")
+        if partition in ("App A", "App B"):
+            self._active_partition = partition
+            self._log(f"[芯片信息] 活跃分区已缓存: {partition}")
+        else:
+            self._log(f"[芯片信息] 未识别活跃分区: {partition}")
 
     def _cancel_ota(self):
         """取消当前操作（OTA 升级或芯片查询）"""

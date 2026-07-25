@@ -35,6 +35,7 @@ void BSP_CAN_Init(void)
     CAN_InitStructure.CAN_BS2 = CAN_BS2_2tq;
     CAN_InitStructure.CAN_SJW = CAN_SJW_1tq;
     CAN_InitStructure.CAN_Mode = CAN_Mode_Normal;
+    CAN_InitStructure.CAN_ABOM = ENABLE;   /* M5: 总线异常 Bus-Off 后自动恢复，无需软件重入 */
     if (CAN_Init(CAN1, &CAN_InitStructure) == 0) {
         LOG_E("[CAN] Init FAILED!\r\n");
     }

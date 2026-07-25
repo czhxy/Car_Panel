@@ -1,24 +1,24 @@
 # Car_Panel 汽车双 ECU 仪表盘项目方案 —— STM32F429IGT6 显示域版本
 
-> 项目代号：**Car_Panel-F429**  
-> 文档版本：**v2.4**（修正 FMC/LTDC 引脚冲突、补充 CAN 协议和 OTA 详细机制）  
-> 目标：在 **STM32F429IGT6（显示域）+ STM32F103C8T6（动力域）+ CAN 总线** 架构上，实现 OTA/IAP、LVGL 仪表盘 UI、LTDC RGB 屏、DMA2D 显示加速、闭环电机控制。  
-> 本文档基于实际原理图（`extracted/schematic_for_ai.md`）重构，适配板载 SDRAM/NAND 资源。
+> 项目代号：**Car_Panel-F429**
+> 文档版本：**v3.1**（方案变更：LTDC/LED → SPI 2.8 寸触摸屏 MSP2834，移除 W25Q64/SDRAM/NAND）
+> 目标：在 **STM32F429IGT6（显示域）+ STM32F103C8T6（动力域）+ CAN 总线** 架构上，实现真 AB 分区 OTA、LVGL 仪表盘 UI（SPI ILI9341V 屏 + FT6336G 电容触摸）、闭环电机控制。
+> 本文档根据实际开发进度更新（FreeRTOS v11.3.0 + CAN 通信框架 + Bootloader 已完成）。
 
 ---
 
 ## 目录
 
-1. [选型说明：为什么用 F429IGT6](#1-选型说明为什么用-f429igt6)
+1. [方案变更说明](#1-方案变更说明)
 2. [硬件资源清单与角色分配](#2-硬件资源清单与角色分配)
 3. [F429IGT6 引脚规划（显示域）](#3-f429igt6-引脚规划显示域)
 4. [电源树设计](#4-电源树设计)
-5. [Flash 与外部存储分区](#5-flash-与外部存储分区)
+5. [Flash 与存储分区](#5-flash-与存储分区)
 6. [主方案系统架构](#6-主方案系统架构)
-7. [LTDC + RGB LCD 配置](#7-ltdc--rgb-lcd-配置)
-8. [DMA2D + LVGL + SDRAM 全屏双缓冲](#8-dma2d--lvgl--sdram-全屏双缓冲)
-9. [W25Q64 Flash OTA + 升级标志方案](#9-w25q64-flash-ota--升级标志方案)
-10. [CAN 通信协议草案](#10-can-通信协议草案)
+7. [SPI LCD 驱动（ILI9341V）](#7-spi-lcd-驱动ili9341v)
+8. [LVGL 移植与显示](#8-lvgl-移植与显示)
+9. [OTA 升级方案（真 AB 分区）](#9-ota-升级方案真-ab-分区)
+10. [CAN 通信协议](#10-can-通信协议)
 11. [软件模块拆分](#11-软件模块拆分)
 12. [开发阶段计划](#12-开发阶段计划)
 13. [烧录与下载方式](#13-烧录与下载方式)
@@ -27,85 +27,78 @@
 
 ---
 
-## 1. 选型说明：为什么用 F429IGT6
+## 1. 方案变更说明
 
-### 1.1 核心诉求
+### 1.1 变更概述
 
-| 诉求 | F429IGT6 是否满足 |
-|---|---|
-| 不用 STM32F407 | ✅ 满足 |
-| 驱动 RGB LCD 屏 | ✅ 通过 **LTDC** 原生支持 |
-| 流畅 LVGL 运行 | ✅ 180 MHz + 256 KB RAM + **32MB SDRAM 全屏双缓冲** + **DMA2D** |
-| 板上资源丰富 | ✅ SDRAM + NAND + 辅助 F103 + CH340 |
-| 未来可扩展 | ✅ LTDC + DMA2D 可驱动更高分辨率屏 |
+原方案（v2.x）规划使用 LTDC 并行 RGB 接口驱动 TFT LCD + SDRAM 全屏双缓冲 + W25Q64 外挂 OTA。实际开发中：
 
-### 1.2 F429IGT6 vs F407ZGT6 vs F411RET6
+| 变更项 | 原方案 (v2.x) | 现方案 (v3.1) | 原因 |
+|--------|-------------|-------------|------|
+| 显示接口 | LTDC RGB | **SPI2 4 线制** | 硬件方案变更，使用 MSP2834 SPI 屏 |
+| LCD 控制器 | ILITEK RGB 565 | **ILI9341V (240×320)** | MSP2834 模块集成 |
+| 触摸 | XPT2046 (SPI) | **FT6336G (I2C, 0x38)** | MSP2834 电容触摸 |
+| SDRAM | 32MB W9825G6KH | **不使用** | SPI 屏自带 GRAM，无需 Framebuffer |
+| DMA2D | 硬件加速 flush | **不使用** | SPI 逐行发送，DMA2D 无适用场景 |
+| OTA 存储 | W25Q64 外挂 8MB | **内部 Flash 真 AB 分区** | 可直接写 App 槽区，无需暂存 |
+| NAND | 128MB 预留 | **不使用** | 无大容量资源存储需求 |
+| 已实现模块 | 零 | Bootloader + CAN + FreeRTOS 代码框架已完成，硬件联调未完成 | 实际开发进度 |
 
-| 项目 | F407ZGT6（原方案） | F411RET6（已验证 OTA） | **F429IGT6（本方案）** |
-|---|---|---|---|
-| 内核/主频 | Cortex-M4 @ 168 MHz | Cortex-M4 @ 100 MHz | **Cortex-M4 @ 180 MHz** |
-| Flash | 1 MB | 512 KB | **1 MB** |
-| RAM | 192 KB | 128 KB | **256 KB + 32 MB SDRAM** |
-| 显示接口 | FSMC 8080 | 无 | **LTDC + FMC SRAM** |
-| RGB/LTDC | 无 | 无 | **LTDC + DMA2D** |
-| CAN | 2× bxCAN | 1× bxCAN | **2× bxCAN** |
-| 板载存储 | SPI Flash | SPI Flash | **SDRAM + NAND + SPI模块** |
-| 封装 | LQFP144 | LQFP64 | **LQFP176** |
+### 1.2 当前实际规格
 
-### 1.3 选型结论
-
-- **F429IGT6 是显示增强版**：内置 LTDC + DMA2D，配合 32MB SDRAM 可实现流畅 UI 动画。
-- **板载资源丰富**：SDRAM 全屏双缓冲、NAND 大容量存储、辅助 F103 可分担任务。
-- **唯一代价**：LQFP176 必须重新画板/飞线，价格比 F407/F412 高。
+| 项目 | 值 |
+|------|-----|
+| MCU | STM32F429IGT6, Cortex-M4 @ 180MHz |
+| Flash | 2MB（项目使用前 1MB：Bootloader 64KB + OTA 参数 64KB + App A 384KB + App B 384KB + 预留 128KB） |
+| RAM | 芯片物理资源为 192KB 主 SRAM + 64KB CCM；当前工程 scatter 仅使用 128KB 主 SRAM + 64KB CCM |
+| RTOS | FreeRTOS v11.3.0 (heap_4, 64KB CCM 堆) |
+| 显示屏 | MSP2834（2.8 寸 IPS, ILI9341V, 240×320 RGB565, SPI2） |
+| 触摸 | FT6336G 电容触摸 (I2C1, 400kHz) |
+| CAN | 500kbps, 29-bit 扩展帧, PA11/PA12 默认引脚 |
+| Bootloader | YMODEM-1K OTA, 真 AB 分区, CRC32 校验, 零 Flash 搬运回滚 |
 
 ---
 
 ## 2. 硬件资源清单与角色分配
 
-### 2.1 STM32F429IGT6 显示域（板载资源）
+### 2.1 STM32F429IGT6 显示域
 
-| 资源 | 型号 | 规格 | 备注 |
+| 资源 | 型号 | 规格 | 当前使用状态 |
+|------|------|------|-------------|
+| 主频 | STM32F429IGT6 | 180 MHz | LQFP176，正常运行 |
+| Flash | 片上 | 2MB（使用 1MB） | A/B 分区 OTA |
+| RAM | 片上 | 192KB 主 SRAM + 64KB CCM | 当前工程仅映射 128KB 主 SRAM；CCM=FreeRTOS 堆，主 SRAM=DMA/全局 |
+| SPI2 | 片上 | APB1 @ 45MHz | **MSP2834 LCD (ILI9341V)** |
+| I2C1 | 片上 | APB1 @ 45MHz | **FT6336G 触摸 (400kHz)** |
+| CAN1 | 片上 | 500kbps, PA11/PA12 默认引脚 | CAN 收发器 TJA1050 |
+| USART1 | 片上 | 115200bps, PA9/PA10 | printf 日志 + 查询协议 |
+| SDRAM | W9825G6KH | 32MB（板载） | 板载器件，当前软件不使用 |
+| NAND | W29N01HV | 128MB（板载） | 板载器件，当前软件不使用 |
+| 辅助 F103 | STM32F103CBT6 | LQFP48 | 板载 USB/UART 桥接（暂不使用） |
+| CH340 | CH340N | USB UART | PA9(TX)/PA10(RX) |
+
+**显示域角色**：运行 Bootloader + FreeRTOS + LVGL 仪表盘；通过 CAN 接收动力域数据并实时显示；通过 CAN 向动力域发送控制指令。
+
+### 2.2 外置模块
+
+| 模块 | 型号 | 接口 | 状态 |
 |------|------|------|------|
-| 主频 | STM32F429IGT6 | 180 MHz | LQFP176 |
-| Flash | 片上 | 1 MB | 0x08000000–0x080FFFFF |
-| RAM | 片上 | 256 KB | 0x20000000–0x2003FFFF |
-| **SDRAM** | **W9825G6KH-6** | **32 MB, 16-bit, 68 MHz** | **可做全屏双缓冲** |
-| **NAND Flash** | **W29N01HVSINA** | **128 MB, 8-bit** | 后续 OTA 迁移目标 |
-| 辅助 MCU | STM32F103CBT6 | LQFP48 | USB/UART 桥接（暂不使用）|
-| USB UART | CH340N | - | PA9(TX)/PA10(RX) |
-| LDO | AMS1117-3.3 | 3.3V | 板载稳压 |
-| 5V 稳压 | MT9700 | 5V | 板载 |
-| LTDC | 有 | - | 驱动 RGB LCD |
-| DMA2D | 有 | - | 加速 LVGL flush |
-
-**板上未焊接/未标注**：
-- W25Q64 模块需外接（OTA 验证阶段使用）
-- AT24C02 无（升级标志存储在 W25Q64 固定区块）
-
-### 2.2 外置模块（需采购/使用现有）
-
-| 模块 | 型号 | 接口 | 备注 |
-|------|------|------|------|
-| **RGB LCD** | 4.3/5/7 寸 RGB565 | LTDC | **本方案核心外设** |
-| CAN 收发器 | TJA1050 / SN65HVD230 | GPIO + CAN1 | ×2 |
-| BTS7960 / IBT-2 | H 桥驱动 | PWM + DIR | |
-| JGA25-370 | 12V 电机 + AB 相编码器 | Encoder 接口 | |
-| **W25Q64 模块** | SPI Flash 8 MB | SPI3 | **OTA 验证阶段使用** |
+| **SPI 触摸屏** | **MSP2834 (ILI9341V + FT6336G)** | SPI2 + I2C1 | 待开发 |
+| CAN 收发器 | TJA1050 / SN65HVD230 | GPIO + CAN1 | 代码已接入，硬件未验证 |
+| DRV8833 | 双 H 桥驱动器 ×2 | PWM + DIR + EN | 动力域，代码已实现，硬件未验证 |
+| MG310 | 7.4V 直流减速电机 ×2，AB 相编码器 | Encoder 接口 | 动力域，代码已实现，硬件未验证 |
 | F103C8T6 核心板 | 动力域 ECU | CAN + PWM | 现有 |
 
-### 2.3 板上 LED 和按键
+### 2.3 板载 LED 和按键
 
-| 元件 | GPIO | 方向 | 备注 |
-|------|------|------|------|
-| LED2 (蓝) | PE2 | 输出 | **高电平点亮**（注意！）|
-| LED3 | PH2 | 输出 | 低电平点亮 |
-| LED7 | PF0 | 输出 | 低电平点亮 |
-| LED8 | PC13/PA12 | - | 贴片 LED |
-| KEY1 (WKUP) | PA0 | 输入 | **低电平有效**，4.7kΩ 上拉 |
-| KEY2 | PI11 | 输入 | 1kΩ 上拉 |
-| KEY3 | PA0_WP | 输入 | 同 WKUP |
-| KEY4 | PC13 | 输入 | |
-| RESET | NRST | 输入 | 复位按键 |
+| 元件 | GPIO | 方向 | 已实现 |
+|------|------|------|--------|
+| LED1 | PH12 | 输出 | ✅ `bsp_led.c` |
+| LED2 | PH10 | 输出 | ✅ |
+| LED3 | PH11 | 输出 | ✅ |
+| LED4 | PE3 | 输出 | ✅ |
+| KEY1 | PE2 | 输入 | ✅ `bsp_key.c` (20ms 扫描) |
+| KEY2 | PI11 | 输入 | ✅ |
 
 ---
 
@@ -113,114 +106,54 @@
 
 ### 3.1 引脚分配总表
 
-基于原理图（`extracted/schematic_for_ai.md`）整理：
-
 | 模块 / 信号 | MCU 引脚 | 方向 | 备注 |
 |-------------|---------|------|------|
 | **电源 / 系统** | | | |
 | 3V3 | VDD 多引脚 | - | 板载 LDO 输出 |
 | GND | VSS 多引脚 | - | |
-| VCAP_1 | Pin 31 | - | **必须接 2.2 µF 到地** |
-| VCAP_2 | Pin 81 | - | **必须接 2.2 µF 到地** |
-| VBAT | Pin 5 | - | 电池/3.3V |
+| VCAP_1 | Pin 81 | - | 必须接 2.2 µF 到地 |
+| VCAP_2 | Pin 125 | - | 必须接 2.2 µF 到地 |
 | NRST | Pin 31 | 输入 | 复位 |
 | BOOT0 | Pin 166 | - | 跳线帽默认 0 |
-| BOOT1 | PB2 | - | |
 | **SWD 调试** | | | |
 | SWDIO | PA13 | 双向 | 调试下载 |
 | SWCLK | PA14 | 输出 | 调试时钟 |
 | **USART1 + CH340** | | | |
 | USART1_TX | PA9 | 输出 | → CH340 RX |
 | USART1_RX | PA10 | 输入 | ← CH340 TX |
-| **CAN1 总线** | | | |
-| CAN1_RX | PB8 | 输入 | Remap 模式 |
-| CAN1_TX | PB9 | 输出 | Remap 模式 |
-| **LTDC RGB LCD** | | | |
-| LTDC_R0–R4 | PC0, PC2, **PI0**, PC6, PC7 | 输出 | RGB 数据（PC3 让给 FMC_SDCKE0）|
-| LTDC_R5–R7 | PB0, PB1, PA6 | 输出 | |
-| LTDC_G0–G5 | PA7, PB10, PB11, PG10, PG11, PG12 | 输出 | |
-| LTDC_G6–G7 | PH2, PH3 | 输出 | |
-| LTDC_B0–B4 | PB5, PB8*, PB9*, PB10*, PC10 | 输出 | 注意与CAN冲突 |
-| LTDC_B5–B7 | PC11, PD3, PD6 | 输出 | |
-| LTDC_CLK | PG7 | 输出 | Pixel Clock |
-| LTDC_HSYNC | **PI3** | 输出 | Horizontal Sync（避开 PC6 冲突）|
-| LTDC_VSYNC | PA4 | 输出 | Vertical Sync |
-| LTDC_DE | PF2 | 输出 | Data Enable |
-| LTDC_DISP | PF3 | 输出 | Display On |
-| **SDRAM W9825G6KH（Bank1）** | | | |
-| FMC_A0–A5 | PF0–PF5 | 输出 | 地址线 |
-| FMC_A6–A11 | PF12, PF13, PF14, PF15, PG0, PG1 | 输出 | |
-| FMC_A12 | PG2 | 输出 | |
-| FMC_D0–D15 | PD14, PD15, PD0*, PD1*, PE7–PE15 | 双向 | 数据总线 |
-| FMC_BA0/BA1 | PG4, PG5 | 输出 | Bank 地址 |
-| FMC_NRAS / FMC_SDNRAS | PD5 | 输出 | **SDRAM RAS（行地址选通）**，NAND NWE（写使能）复用 |
-| FMC_NCAS / FMC_SDNCAS | PD4 | 输出 | **SDRAM CAS（列地址选通）**，NAND NOE（读使能）复用 |
-| FMC_NWE | PC6 | 输出 | NAND 独立写使能（避开 PD5） |
-| FMC_NBL0/NBL1 | PE0, PE1 | 输出 | Byte Mask |
-| FMC_SDCKE0 | PC3 | 输出 | SDRAM Clock Enable |
-| FMC_SDCLK | PG8 | 输出 | SDRAM Clock |
-| FMC_SDNCAS | PD4 | 输出 | SDRAM CAS（复用 NAND NOE）|
-| FMC_SDNRAS | PD5 | 输出 | SDRAM RAS（复用 NAND NWE）|
-| FMC_SDNWE | PC0 | 输出 | SDRAM 写掩码 |
-| FMC_SDNE0 | **PB6** | 输出 | **SDRAM Bank1 片选（NE1）** |
-| **NAND W29N01HV（Bank1，未使用）** | | | 后续 OTA 迁移目标 |
-| FMC_NCE | PD6 | 输出 | NAND CE |
-| FMC_ALE | PD12 | 输出 | Address Latch Enable |
-| FMC_CLE | PD11 | 输出 | Command Latch Enable |
-| FMC_NOE | PD4 | 输出 | **NAND 读使能（复用 SDRAM CAS）**，SDRAM 模式下由 FMC 自动控制 |
-| FMC_NWE | PC6 | 输出 | **NAND 写使能（独立引脚）**，避开 PD5 与 SDRAM RAS 冲突 |
-| FMC_DATA | PD14, PD15, PD0, PD1, PE7–PE15 | 双向 | 8-bit 数据 |
-| **W25Q64 SPI Flash（OTA 验证）** | | | |
-| SPI3_SCK | PC10 | 输出 | |
-| SPI3_MISO | PC11 | 输入 | |
-| SPI3_MOSI | PC12 | 输出 | |
-| W25Q64_CS | **PI4** | 输出 | 任意 GPIO（原 PI3 改用于 LTDC_HSYNC）|
-| **板载 LED** | | | |
-| LED2 (蓝) | PE2 | 输出 | **高电平点亮** |
-| LED3 | PH2 | 输出 | 低电平点亮 |
-| LED7 | PF0 | 输出 | 低电平点亮 |
-| **板载按键** | | | |
-| KEY1 (WKUP) | PA0 | 输入 | 低电平有效 |
-| KEY2 | PI11 | 输入 | |
-| KEY4 | PC13 | 输入 | |
-| **F103 辅助 MCU 通信** | — | — | 板载 F103CBT6 仅用于 USB/UART 桥接 CH340N，无独立引脚引出 |
+| **CAN1 总线（默认引脚）** | | | |
+| CAN1_RX | PA11 | 输入 | 默认引脚 |
+| CAN1_TX | PA12 | 输出 | 默认引脚 |
+| **SPI2 LCD (MSP2834 ILI9341V)** | | | |
+| SPI2_SCK | **PB13** | OUT, AF5 | 串行时钟 |
+| SPI2_MOSI | **PB15** | OUT, AF5 | 主出从入 |
+| SPI2_MISO | **PB14** | IN, AF5 | 可选回读 |
+| LCD_CS | **PB12** | OUT | 片选（软件 NSS, 低有效） |
+| LCD_DC | **PB10** | OUT | 数据/命令选择（高=数据） |
+| LCD_RST | **PB11** | OUT | LCD 复位（低有效） |
+| LCD_BL | **PB0** | OUT | 背光控制（高=ON） |
+| **I2C1 触摸 (FT6336G)** | | | |
+| I2C1_SCL | **PB6** | OUT, AF4 | 400kHz 时钟 |
+| I2C1_SDA | **PB7** | BIDIR, AF4 | 开漏，模块自带上拉 |
+| CTP_INT | **PB8** | IN, EXTI8 | 触摸中断（低有效） |
+| CTP_RST | **PB9** | OUT | 触摸复位（低有效） |
 
-> **注**：标 * 的引脚需根据实际 LCD RGB 配置调整
+> PB8/PB9 当前分别用于 CTP_INT 和 CTP_RST；CAN1 使用 PA11/PA12 默认引脚，因此此处不存在 CAN/I2C 引脚冲突。
 
-### 3.2 引脚冲突检查
+### 3.2 实际使用的 LED 和按键
 
-| 冲突点 | 处理方案 |
-|--------|---------|
-| PA9/PA10 被 CH340 占用 | CAN1 必须用 PB8/PB9 Remap |
-| PB8/PB9 同时用于 CAN1 和 RGB B通道 | 分配 B4/B5 给其他引脚，避开 PB8/PB9 |
-| PD0/PD1 被片内 FMC 数据总线和 NAND 占用 | FMC 数据线从 PD14 开始，低 2 位 (PD0/PD1) 被 NAND 8-bit 总线占用，16-bit SDRAM 需全部 D0–D15，两者不能同时满带宽工作 |
-| **PC3 被 LTDC_R2 和 FMC_SDCKE0 同时占用** | **已修复**：LTDC_R2 改到 PI0，PC3 专用于 FMC_SDCKE0 |
-| LTDC_HSYNC(原 PC6) 与 LTDC_R4(原 PC6) 重复 | **已修复**：LTDC_HSYNC 改到 PI3 |
-| **PB6 被 I2C0_SCL 和 FMC_SDNE0 同时占用** | ~~已修复~~ **已删除**：I2C0_SCL 不存在，板载 F103CBT6 无独立引脚引出，FMC_SDNE0 正常使用 PB6（NE1）|
-| **PI3 被 W25Q64_CS 和 LTDC_HSYNC 同时占用** | **已修复**：W25Q64_CS 改到 PI4 |
-| LTDC 与 FMC 共用部分 GPIO | 两者**必须共存**（framebuffer 在 SDRAM 里）。需仔细分配引脚，优先保证 SDRAM 控制信号，LTDC 数据线用备选引脚绕开 |
-| PA5/PA6/PA7 被标注为 SPI1 | 板载 NAND 已占用，实际不可用 |
-| PD4/PD5 复用 NAND NOE/NWE 与 SDRAM CAS/RAS | **已修复**：SDRAM CAS/RAS 复用 NAND NOE/NWE（由 FMC 自动控制），NAND 独立使用 PC6 作为 NWE |
+| 元件 | GPIO | 方向 | 已实现 |
+|------|------|------|--------|
+| LED1 | PH12 | OUT | ✅ 心跳指示 |
+| LED2 | PH10 | OUT | ✅ |
+| LED3 | PH11 | OUT | ✅ |
+| LED4 | PE3 | OUT | ✅ |
+| KEY1 | PE2 | IN | ✅ CAN 测试发送 |
+| KEY2 | PI11 | IN | ✅ 预留 |
 
-### 3.3 RGB LCD 建议接线
+### 3.3 引脚冲突说明
 
-| RGB LCD 信号 | 建议接法 | 备注 |
-|-------------|---------|------|
-| R0–R4 | PC0, PC2, PI0, PC6, PC7 | PC3 让给 FMC_SDCKE0 |
-| R5–R7 | PB0, PB1, PA6 | |
-| G0–G5 | PA7, PB10, PB11, PG10, PG11, PG12 | |
-| G6–G7 | PH2, PH3 | |
-| B0–B4 | PB5, PC10, PC11, PD3, PD6 | 避开 PB8/PB9（CAN）|
-| B5–B7 | PI1, PI2, PI5 | |
-| CLK | PG7 | |
-| HSYNC | PI3 | 原 PC6 冲突 |
-| VSYNC | PA4 | |
-| DE | PF2 | |
-| DISP | PF3 | |
-| DE | PF2 |
-| DISP | PF3 |
-| GND | GND |
-| 5V / 3.3V | 外部供电（需确认 LCD 电压）|
+由于方案从 LTDC + SDRAM + NAND + W25Q64 改为 SPI2 + I2C1，所有新增引脚均位于 GPIOB；CAN1 使用 PA11/PA12 默认引脚，当前无已确认的 CAN/I2C 冲突。PA11/PA12 同时连接板载 USB FS，但当前软件不使用 USB FS。板载 SDRAM/NAND 不由当前软件使用，FMC 引脚保持默认状态。
 
 ---
 
@@ -233,7 +166,7 @@
     ↓
 U11 (MT9700) → +5V
     ↓
-U13 (AMS1117-3.3) → +3.3V → F429, SDRAM, NAND, CH340
+U13 (AMS1117-3.3) → +3.3V → F429, 板载存储器, CH340
     ↓
 F429 VDDA → 模拟电源（磁珠隔离）
 ```
@@ -244,7 +177,7 @@ F429 VDDA → 模拟电源（磁珠隔离）
 |------|------|------|
 | VDD/VSS | 多对 | 每对就近放 100 nF 退耦 |
 | VDDA/VSSA | 3.3V/地 | ADC 模拟电源，串磁珠 |
-| VREF+ | 3.3V | 若不使用 ADC |
+| VREF+ | 与 VDDA 同源 | 按 STM32F429 数据手册连接 |
 | **VCAP_1** | **2.2 µF → 地** | 内部稳压输出，必须接 |
 | **VCAP_2** | **2.2 µF → 地** | 必须接 |
 | VBAT | 3.3V 或纽扣电池 | 后备域 |
@@ -253,61 +186,49 @@ F429 VDDA → 模拟电源（磁珠隔离）
 
 | 模块 | 电压 | 来源 |
 |------|------|------|
-| RGB LCD | 5V 或 3.3V | 外部电源（确认 LCD 规格）|
-| W25Q64 模块 | 3.3V | F429 GPIO 或外部 LDO |
+| MSP2834 | 推荐 5V | 模块板载 3.3V 稳压，按用户手册供电 |
+| W25Q64 模块 | 3.3V | 当前方案不使用 |
 | CAN 收发器 | 3.3V 或 5V | 外部 LDO |
 
 ---
 
-## 5. Flash 与外部存储分区
+## 5. Flash 与存储分区
 
-### 5.1 F429IGT6 片上 Flash 分区（1 MB）
-
-```
-0x08000000 - 0x0801FFFF   Bootloader    128 KB   (扇区 0–4)
-0x08020000 - 0x080DFFFF   App            768 KB  (扇区 5–10)
-0x080E0000 - 0x080FFFFF   参数/标志区    128 KB  (扇区 11)
-```
-
-### 5.2 SDRAM 分区（W9825G6KH 32 MB）
+### 5.1 F429IGT6 片上 Flash 分区（使用 1MB / 总量 2MB）
 
 ```
-0xC0000000 - 0xC01FFFFF   LVGL Framebuffer 0   2 MB   (全屏双缓冲)
-0xC0200000 - 0xC03FFFFF   LVGL Framebuffer 1   2 MB   (全屏双缓冲)
-0xC0400000 - 0xC1FFFFFF   UI 资源/字库缓存   28 MB  (可选)
+0x08000000 - 0x0800FFFF   Bootloader       64 KB   Sector 0-3
+0x08010000 - 0x0801FFFF   OTA 参数区       64 KB   Sector 4 (append-only 日志)
+0x08020000 - 0x0807FFFF   App A             384 KB  Sector 5-7
+0x08080000 - 0x080DFFFF   App B             384 KB  Sector 8-10
+0x080E0000 - 0x080FFFFF   (预留)           128 KB  Sector 11
 ```
 
-### 5.3 W25Q64 分区（OTA 验证阶段）
+> 真 AB 分区机制：每个 App 槽独立链接（通过 scatter 文件），Bootloader 根据 `active_partition` 设 `SCB->VTOR` 后跳转。升级时 YMODEM 写非活跃槽 → 翻转 active → 重启。回滚时免 Flash 搬运。
+
+### 5.2 RAM 分区
 
 ```
-0x000000 - 0x0FFFFF   固件暂存区   1 MB
-0x100000 - 0x1FFFFF   资源/字库    1 MB
-0x200000 - 0x7FFFFF   预留         6 MB
+0x20000000 - 0x2001FFFF   当前映射的主 SRAM 128KB    DMA 缓冲 / 全局变量 / 栈
+0x10000000 - 0x1000FFFF   CCM 64KB         FreeRTOS 堆 (heap_4 ucHeap)
 ```
 
-### 5.4 NAND 分区（后续 OTA 迁移目标）
+- LVGL 双缓冲（28.8KB）分配在主 SRAM（`0x2000xxxx`），CCM 无法被 DMA 访问
+- FreeRTOS 堆位于 CCM，不与 DMA 缓冲竞争
+- 芯片剩余的 64KB 主 SRAM 当前未纳入 scatter 文件，不能在现有工程中直接假定可用
 
-```
-Block 0-1:     坏块表              256 KB
-Block 2-10:    固件区 A             2 MB
-Block 11-19:   固件区 B             2 MB
-Block 20-127:  资源/字库           ~26 MB
-Block 128:     升级标志区           128 KB (磨损均衡)
-```
+### 5.3 外部存储（不使用）
 
-### 5.5 F103 辅助 MCU Flash（升级标志）
-
-F103CBT6 片上 128 KB Flash：
-```
-0x08000000 - 0x0801FFFF   App + 标志存储
-```
+- **SDRAM** (W9825G6KH)：不使用。SPI 屏自带 GRAM，无需 Framebuffer。
+- **NAND** (W29N01HV)：不使用。无大容量资源存储需求。
+- **W25Q64**：不使用。OTA 采用内部 Flash 真 AB 分区，无需暂存。
 
 ---
 
 ## 6. 主方案系统架构
 
 ```text
-                    CAN 总线 (500 kbps)
+                    CAN 总线 (500 kbps, 29-bit 扩展帧)
            CANH/CANL + 两端 120 Ω 终端
                         │
      ┌─────────────────┴─────────────────┐
@@ -319,653 +240,331 @@ F103CBT6 片上 128 KB Flash：
 |           |                       |           │
 | Bootloader|                       | 电机控制  |
 | FreeRTOS |                       | PWM 驱动  |
-| LVGL +    | <-------------------> | 编码器测速|
-| DMA2D     |                       | PID 闭环  |
-| LTDC RGB  |                       |           |
-| CAN 接收  |                       |           |
-| W25Q64    |                       |           |
-| NAND      |                       |           |
+| LVGL v8（规划） | <-------------------> | 编码器测速|
+| SPI LCD   |                       | PID 闭环  |
+| I2C Touch |                       | CAN 上报  |
+| CAN 收发  |                       |           |
 +-----+-----+                       +-----+-----+
       │                                   │
-      │ LTDC RGB                         │ PWM/DIR/Encoder
-      ▼                                   ▼
-  4.3/5/7 寸 RGB LCD              DC 减速电机 + H 桥
-  (RGB565, 带触摸)                  (BTS7960 + JGA25-370)
+      │ SPI2 (ILI9341V)                  │ PWM/DIR/Encoder
+      │ I2C1 (FT6336G)                   ▼
+      ▼                           DC 减速电机 + H 桥
+  MSP2834 2.8寸 SPI 屏             (DRV8833 ×2 + MG310 ×2)
+  (240×320 RGB565, 电容触摸)
 ```
+
+**FreeRTOS 任务架构（已实现 6 个任务）：**
+
+| 任务 | 栈 | 优先级 | 周期 | 职责 |
+|------|-----|--------|------|------|
+| CAN_TX | 512 | 3 | 1ms | CAN 帧发送 + 电机控制帧 |
+| CAN_RX | 512 | 3 | 事件 | CAN 帧接收 + 分发 |
+| CAN_TEST | 256 | 3 | 事件 | 按键触发测试发送 |
+| KEY_SCAN | 256 | 2 | 20ms | 按键扫描 |
+| UART_QUERY | 256 | 2 | 事件 | 查询协议解析 |
+| HEARTBEAT | 512 | 1 | 500ms | LED + CAN 心跳 |
+| **DISPLAY** | **1024** | **2** | **5ms** | **LVGL tick + 渲染（待开发）** |
 
 ---
 
-## 7. LTDC + RGB LCD 配置
+## 7. SPI LCD 驱动（ILI9341V）
 
-### 7.1 LTDC 参数计算（以 4.3 寸 480×272 为例）
+### 7.1 硬件参数
 
-| 参数 | 值 | 说明 |
+| 参数 | 值 | 来源 |
 |------|-----|------|
-| 像素时钟 | 9 MHz | 需根据 LCD 规格调整 |
-| HSW (Horizontal Sync) | 41 | LCD 规格 |
-| HSP (Horizontal Back Porch) | 2 | LCD 规格 |
-| HFP (Horizontal Front Porch) | 2 | LCD 规格 |
-| VSW (Vertical Sync) | 10 | LCD 规格 |
-| VSP (Vertical Back Porch) | 2 | LCD 规格 |
-| VFP (Vertical Front Porch) | 2 | LCD 规格 |
-| 水平有效像素 | 480 | LCD 规格 |
-| 垂直有效像素 | 272 | LCD 规格 |
+| 控制器 | ILI9341V | MSP2834 规格书 |
+| 分辨率 | 240×320 | 同上 |
+| 颜色格式 | RGB565 (16bit) | 同上 |
+| SPI 模式 | CPHA=0, CPOL=0 (模式 0) | ILI9341 数据手册 |
+| 命令/数据 | DC 引脚：低=命令, 高=数据 | 同上 |
+| 背光控制 | BL 引脚高=ON（N-MOSFET 驱动） | MSP2834 用户手册 |
+| 复位时序 | RST 低>100ms → 高 | ILI9341V_Init.txt |
 
-### 7.2 LTDC 配置代码框架
+### 7.2 SPI2 初始化
 
 ```c
-void MX_LTDC_Init(void)
-{
-    LTDC_HandleTypeDef hltdc;
-
-    // Pixel clock: HSE(25MHz) / 2 / 2 = 6.25 MHz (或 PLL 配置)
-    // 需根据实际 LCD 调整
-
-    // Layer 1 配置 (RGB565)
-    hltdc.Instance = LTDC;
-    hltdc.Init.HorizontalSync = 41 - 1;
-    hltdc.Init.VerticalSync = 10 - 1;
-    hltdc.Init.AccumulatedHBP = 43;
-    hltdc.Init.AccumulatedVBP = 12;
-    hltdc.Init.AccumulatedActiveW = 523;
-    hltdc.Init.AccumulatedActiveH = 284;
-    hltdc.Init.TotalWidth = 525;
-    hltdc.Init.TotalHeigh = 286;
-
-    hltdc.LayerCfg[0].ImageWidth  = 480;
-    hltdc.LayerCfg[0].ImageHeight = 272;
-
-    HAL_LTDC_Init(&hltdc);
-
-    // 设置 Framebuffer 地址 (SDRAM)
-    HAL_LTDC_SetAddress(&hltdc, SDRAM_FRAMEBUFFER_ADDR);
-}
+// SPI2: PB13=SCK, PB14=MISO, PB15=MOSI (AF5)
+// 5.625MHz (APB1 45MHz / 8), 8bit, Mode 0, MSB First
+SPI_InitStructure.SPI_BaudRatePrescaler = SPI_BaudRatePrescaler_8;  // 5.625 MHz
+SPI_InitStructure.SPI_CPHA = SPI_CPHA_1Edge;    // CPHA=0
+SPI_InitStructure.SPI_CPOL = SPI_CPOL_Low;       // CPOL=0
 ```
 
-### 7.3 CubeMX 配置要点
+### 7.3 关键命令原语
 
-1. **RCC**：HSE = 25 MHz（板载晶振），配置 PLL 输出 180 MHz
-2. **LTDC**：开启 LTDC 外设
-3. **DMA2D**：开启 DMA2D 用于加速 flush
-4. **FMC**：SDRAM Bank1 配置（W9825G6KH 参数）
-5. **GPIO**：配置 LTDC 引脚映射
+| 函数 | 说明 |
+|------|------|
+| `BSP_LCD_WriteCmd(uint8_t cmd)` | CS=0, DC=0, SPI 发送 1 字节命令 |
+| `BSP_LCD_WriteData(uint8_t data)` | CS=0, DC=1, SPI 发送 1 字节数据 |
+| `BSP_LCD_WriteData16(uint16_t data)` | DC=1, SPI 发送 2 字节 RGB565 |
+| `BSP_LCD_SetWindow(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2)` | 写 0x2A + 0x2B 设置绘制窗口 |
+
+### 7.4 初始化序列
+
+完整序列见 `docs/schematic/MSP2834/MSP2834/ILI9341V_Init.txt`，核心步骤：
+
+1. 硬件复位 → 电源配置 (0xCF/0xED/0xE8/0xCB/0xF7/0xEA)
+2. 电源控制 (0xC0/0xC1/0xC5/0xC7) + Display Inversion (0x21)
+3. Memory Access Control (0x36=0x08, BGR顺序)
+4. Pixel Format (0x3A=0x55, 16bit RGB565)
+5. Frame Rate (0xB1) + Gamma (0xE0/0xE1)
+6. Sleep Out (0x11) → 120ms delay → Display ON (0x29)
 
 ---
 
-## 8. DMA2D + LVGL + SDRAM 全屏双缓冲
+## 8. LVGL 移植与显示
 
-### 8.1 核心优势
-
-有了 32 MB SDRAM，LVGL 可以配置**全屏双缓冲**。
-
-> ⚠️ **内存位置注意**：两个全屏缓冲 `draw_buf[2][480×272]` 占 **~522 KB**（480×272×2 字节×2），远超 F429 片上 RAM（256 KB）。**draw_buf 必须定义在 SDRAM 地址空间**（使用 `__attribute__((section(".sdram")))` 或链接脚本指定），否则链接失败或运行中 Stack Overflow。
+### 8.1 配置参数
 
 ```c
 // lv_conf.h
-#define LV_COLOR_DEPTH            16
-#define LV_DISP_DEF_REFR_PERIOD  5    // 5 ms 刷新
-
-// 全屏双缓冲 (480 × 272 × 2 bytes = ~260 KB × 2 = ~522 KB → 必须放 SDRAM)
-// 方式一：链接脚本指定 .lvgl_buf 段到 SDRAM
-// 方式二：动态分配在 SDRAM 堆上
-#define LVGL_BUF_LINES    272
-static lv_color_t draw_buf[2][LV_HOR_RES_MAX * LVGL_BUF_LINES]
-    __attribute__((section(".lvgl_buf")));   // 链接脚本映射到 SDRAM (>=0xC0400000)
-static lv_disp_draw_buf_t disp_buf;
-
-// 初始化时：
-lv_disp_draw_buf_init(&disp_buf, draw_buf[0], draw_buf[1],
-                       LV_HOR_RES_MAX * LVGL_BUF_LINES);
+#define LV_COLOR_DEPTH            16      // RGB565
+#define LV_HOR_RES_MAX            240
+#define LV_VER_RES_MAX            320
+#define LV_DISP_DEF_REFR_PERIOD   5       // 5ms 刷新周期
+#define LV_MEM_SIZE               (32 * 1024)  // 规划值；LVGL 尚未加入当前工程
 ```
 
-### 8.2 性能目标
+### 8.2 双缓冲方案
 
-| 指标 | 目标值 |
-|------|--------|
-| LVGL FPS | ≥ 50 fps |
-| CPU 占用 | < 60% |
-| DMA2D 占用 | < 30% |
+```
+双缓冲: 2 × (240 × 30 像素) × 2 byte(RGB565) = 28.8 KB
+位置: 主 SRAM (0x20000000), 全局静态分配 (__attribute__((section(".bss"))))
+```
 
-### 8.3 DMA2D flush_cb 实现
+SPI 屏自带 GRAM，无需 SDRAM Framebuffer。LVGL 绘制到缓冲 → flush_cb 逐行 SPI 发送到 ILI9341 GRAM。
+
+### 8.3 flush_cb 实现
 
 ```c
-#include "lvgl.h"
-#include "stm32f4xx_hal.h"
-
-#define SDRAM_FRAMEBUFFER_ADDR   0xC0000000
-
-static DMA2D_HandleTypeDef hdma2d;
-
-void lvgl_dma2d_init(void)
-{
-    __HAL_RCC_DMA2D_CLK_ENABLE();
-
-    hdma2d.Instance = DMA2D;
-    hdma2d.Init.Mode         = DMA2D_M2M;                 // Memory to Memory
-    hdma2d.Init.ColorMode    = DMA2D_OUTPUT_RGB565;
-    hdma2d.Init.OutputOffset = LV_HOR_RES_MAX - 480;      // 初始值：全屏刷新 offset=0，
-                                                           // 局部刷新时在 flush_cb 中动态修改
-    HAL_DMA2D_Init(&hdma2d);
-}
-
 void lcd_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color_p)
 {
-    uint32_t width  = area->x2 - area->x1 + 1;
-    uint32_t height = area->y2 - area->y1 + 1;
-    uint32_t dst = SDRAM_FRAMEBUFFER_ADDR
-                 + ((area->y1 * LV_HOR_RES_MAX + area->x1) * 2);
+    uint32_t w = area->x2 - area->x1 + 1;
+    uint32_t h = area->y2 - area->y1 + 1;
 
-    /* 关键：输出行偏移 = 屏宽 - 本次刷新宽度。
-       全屏刷新时 OOR=0；局部刷新时不设会导致行错位/花屏 */
-    hdma2d.Instance->OOR = LV_HOR_RES_MAX - width;
+    BSP_LCD_SetWindow(area->x1, area->y1, area->x2, area->y2);
+    BSP_LCD_WriteCmd(0x2C);  // Memory Write
 
-    // DMA2D 中断搬运到 SDRAM Framebuffer — CPU 立即返回，搬运完成后在回调中通知 LVGL
-    HAL_DMA2D_Start_IT(&hdma2d,
-                       (uint32_t)color_p,
-                       dst,
-                       width,
-                       height);
-    // 注意：不要在这里调用 lv_disp_flush_ready()！等 HAL_DMA2D_TransferCompleteCallback 回调
-}
+    for (uint32_t i = 0; i < w * h; i++) {
+        BSP_LCD_WriteData16(color_p[i].full);
+    }
 
-/* DMA2D 搬运完成中断回调 — 在这里通知 LVGL 本帧完成 */
-void HAL_DMA2D_TransferCompleteCallback(DMA2D_HandleTypeDef *hdma2d)
-{
-    lv_disp_flush_ready(&disp_drv);
+    lv_disp_flush_ready(drv);
 }
 ```
 
-> **为什么用中断而非轮询**：`HAL_DMA2D_PollForTransfer()` 会阻塞 CPU 等待搬运完成，等于 DMA2D 搬运期间 CPU 空转，浪费了 DMA2D 释放 CPU 的初衷。用 `_IT` 中断方式 → CPU 投递任务后立即返回，可同时处理 CAN 收发、按键扫描等任务。
-
-### 8.4 SDRAM 初始化
+### 8.4 触摸 indev 回调
 
 ```c
-void FMC_SDRAM_Init(void)
+void touch_read_cb(lv_indev_drv_t *drv, lv_indev_data_t *data)
 {
-    FMC_SDRAM_CommandTypeDef cmd;
-    FMC_SDRAM_TimingTypeDef timing;
+    uint16_t x, y;
+    if (FT6336G_ReadTouch(&x, &y)) {      // 读取 0x02-0x06 寄存器
+        data->point.x = x;                 // X: (P1_XH[3:0]<<8)|P1_XL
+        data->point.y = y;                 // Y: (P1_YH[3:0]<<8)|P1_YL
+        data->state   = LV_INDEV_STATE_PRESSED;
+    } else {
+        data->state   = LV_INDEV_STATE_RELEASED;
+    }
+}
+```
 
-    // W9825G6KH: 32MB, 16-bit, CL=3
-    timing.LoadToActiveDelay    = 2;
-    timing.ExitSelfRefreshDelay  = 7;
-    timing.SelfRefreshTime       = 4;
-    timing.RowCycleDelay         = 7;
-    timing.WriteRecoveryTime     = 3;
-    timing.RPDelay               = 2;
-    timing.RCDDelay              = 2;
+### 8.5 显示任务
 
-    // 时钟配置
-    cmd.CommandMode = FMC_SDRAM_CMD_CLK_ENABLE;
-    cmd.CommandTarget = FMC_SDRAM_CMD_TARGET_BANK1;
-    HAL_SDRAM_SendCommand(&hsdram1, &cmd, 100);
-    HAL_Delay(1);
-
-    // PALL
-    cmd.CommandMode = FMC_SDRAM_CMD_PALL;
-    HAL_SDRAM_SendCommand(&hsdram1, &cmd, 100);
-
-    // Auto Refresh
-    cmd.CommandMode = FMC_SDRAM_CMD_AUTOREFRESH_MODE;
-    cmd.CommandTarget = FMC_SDRAM_CMD_TARGET_BANK1;
-    cmd.AutoRefreshNumber = 8;
-    HAL_SDRAM_SendCommand(&hsdram1, &cmd, 100);
-
-    // Load Mode Register
-    // W9825G6KH: Burst length=1, CAS=3
-    cmd.CommandMode = FMC_SDRAM_CMD_LOAD_MODE;
-    HAL_SDRAM_SendCommand(&hsdram1, &cmd, 100);
-
-    // Refresh rate
-    HAL_SDRAM_ProgramRefreshRate(&hsdram1, 1386);  // 64ms / 4096 rows
+```c
+void Task_Display(void *pvParameters)
+{
+    TickType_t lastWake = xTaskGetTickCount();
+    for (;;) {
+        lv_tick_inc(5);
+        lv_timer_handler();
+        vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(5));
+    }
 }
 ```
 
 ---
 
-## 9. W25Q64 Flash OTA + 升级标志方案
+## 9. OTA 升级方案（真 AB 分区）
 
-### 9.1 硬件连接
+### 9.1 方案概述
 
-| W25Q64 模块 | F429 引脚 |
-|-------------|----------|
-| VCC | 3.3V |
-| GND | GND |
-| SI (MOSI) | PC12 |
-| SO (MISO) | PC11 |
-| CLK | PC10 |
-| CS | PI4 |
-
-### 9.2 分区设计
+OTA 使用**内部 Flash 真 AB 分区**，**不依赖外挂 Flash**。
 
 ```
-W25Q64 (8 MB):
-┌─────────────────────┬─────────────────────┐
-│  0x000000 - 0x00FFF │  升级标志区          │   4 KB
-├─────────────────────┼─────────────────────┤
-│  0x010000 - 0x07FFF │  OTA 固件区 A       │ 448 KB
-├─────────────────────┼─────────────────────┤
-│  0x080000 - 0x0FFFF │  OTA 固件区 B       │ 512 KB
-├─────────────────────┼─────────────────────┤
-│  0x100000 - 0x1FFFFF │  字库/资源区        │  1 MB
-├─────────────────────┼─────────────────────┤
-│  0x200000 - 0x7FFFFF │  预留               │  6 MB
-└─────────────────────┴─────────────────────┘
+升级流程:
+  Bootloader 接收 YMODEM 固件 → 直接写入非活跃槽位 Flash
+  → 校验 reset-handler 地址 → 翻转 active_partition → 重启
+
+回滚机制:
+  Bootloader 检查 CRC32 → 连续启动失败达到阈值后切换活跃槽位标记
+  → 零 Flash 搬运，直接跳转备用槽位
 ```
 
-### 9.3 升级标志结构
+### 9.2 分区详情
 
-```c
-// W25Q64 固定区块存储结构
-typedef struct {
-    uint8_t  magic[4];        // 'OTA_' 标记
-    uint8_t  target_slot;      // 目标槽位 (0=A, 1=B)
-    uint32_t fw_size;          // 固件大小
-    uint32_t fw_crc32;        // CRC32 校验
-    uint32_t fw_addr;         // 固件在 W25Q64 中的地址
-    uint8_t  status;           // 0=idle, 1=receiving, 2=ready, 3=updating
-    uint8_t  write_count;      // 写入计数（磨损均衡）
-    uint8_t  reserved[6];       // 对齐到 32 字节
-} ota_flag_t;
+参见 §5.1。每个 App 槽独立链接（通过 scatter 文件 `app.sct`/`app_b.sct`）：
+- App A 链接到 `0x08020000`
+- App B 链接到 `0x08080000`
 
-#define OTA_FLAG_ADDR    0x000000    // W25Q64 起始 4KB 区块
-```
+### 9.3 OTA 参数区（Sector 4）
 
-### 9.4 OTA 完整流程（含双槽位回退）
+- Append-only 磨损均衡日志，1024 槽 × 64B
+- 每条记录含 CRC32，掉电安全
+- `boot_decision.c` 负责 CRC 校验 + 选址 + 回滚决策
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        App 侧升级流程                           │
-├─────────────────────────────────────────────────────────────────┤
-│ 1. App 检测到升级命令（CAN / UART / 按键）                       │
-│ 2. 读取当前运行槽位（从 Flash 参数区）                          │
-│ 3. 选择目标槽位：若运行在 A，则升级 B；反之亦然                   │
-│ 4. 擦除目标槽位 W25Q64 区域（448 KB）                          │
-│ 5. YMODEM 接收固件 → 逐块写入 W25Q64 目标槽位                   │
-│ 6. 固件接收完成 → 计算 CRC32 并与传输的校验和比对                │
-│ 7. CRC 校验通过 → 写入升级标志（target_slot, status=ready）      │
-│ 8. CRC 校验失败 → 擦除目标槽位，记录错误日志，保持运行           │
-│ 9. NVIC_SystemReset()                                          │
-└─────────────────────────────────────────────────────────────────┘
-                              ↓
-┌─────────────────────────────────────────────────────────────────┐
-│                      Bootloader 侧流程                          │
-├─────────────────────────────────────────────────────────────────┤
-│ 1. Bootloader 启动，读取 W25Q64 升级标志                        │
-│ 2. 检查 magic 标记 ('OTA_') 是否存在                            │
-│ 3. 若无标记或 status≠ready → 直接跳转 App（正常启动）           │
-│ 4. 若有标记：                                                   │
-│    a. 校验 CRC32（W25Q64 固件 vs 存储的 crc32）                │
-│    b. CRC 校验失败 → 清除标志，记录错误 → 跳转 App              │
-│    c. CRC 校验通过 → 进入升级模式                                │
-│ 5. 擦除 App Flash 区（768 KB）                                 │
-│ 6. 从 W25Q64 逐块复制固件到 App Flash（DMA 加速）              │
-│ 7. 复制完成后，再次校验 App Flash CRC32                         │
-│ 8. CRC 校验通过 → 清除升级标志 → 更新运行槽位标记 → 跳转 App    │
-│ 9. CRC 校验失败 → 标记升级失败 → 可选择回退到旧固件            │
-└─────────────────────────────────────────────────────────────────┘
-```
+### 9.4 关键设计原则
 
-### 9.5 A/B 槽选择逻辑
-
-```c
-typedef enum {
-    SLOT_A = 0,
-    SLOT_B = 1,
-} ota_slot_t;
-
-ota_slot_t ota_get_current_slot(void) {
-    // 从 Flash 参数区读取当前运行槽位
-    return *(volatile uint8_t*)(APP_PARAM_ADDR);
-}
-
-ota_slot_t ota_get_target_slot(void) {
-    // 目标槽位 = 当前槽位的反
-    return (ota_get_current_slot() == SLOT_A) ? SLOT_B : SLOT_A;
-}
-
-// W25Q64 槽位地址
-#define SLOT_ADDR(slot)   ((slot) == SLOT_A ? OTA_SLOT_A_ADDR : OTA_SLOT_B_ADDR)
-```
-
-### 9.6 搬运中断处理（掉电保护）
-
-为防止搬运过程中掉电导致固件损坏，Bootloader 采用**两阶段校验**：
-
-| 阶段 | 校验点 | 失败处理 |
-|------|--------|---------|
-| W25Q64 → RAM | CRC32(W25Q64) vs ota_flag.fw_crc32 | 中止升级，保持原 App |
-| RAM → App Flash | CRC32(App Flash) vs ota_flag.fw_crc32 | 中止升级，擦除 App Flash |
-| App 首次启动 | App 内置自检 | 回退到旧槽位（若双槽均有效）|
-
-> **掉电恢复机制**：若搬运过程中意外掉电，下次 Bootloader 启动时会发现 App Flash CRC32 校验失败。此时若原槽位（当前未运行）有效，自动回退到原固件。
-
-### 9.7 磨损均衡策略
-
-W25Q64 擦写次数约 10 万次，但仍需优化：
-- **双槽位**：A/B 两个固件区，失败可回退
-- **单标志区**：固定使用起始 4KB 区块（4KB 仅占 1 个扇区）
-- **写入计数**：记录 `write_count`，用于评估升级频率
-- **备用标志区**：预留 0x1000–0x1FFF 作为轮换标志区，降低单点磨损
-
-### 9.8 W25Q64 驱动关键函数
-
-```c
-// bsp_w25q64.h
-#define W25Q64_CS_PORT    GPIOI
-#define W25Q64_CS_PIN     GPIO_PIN_4
-
-#define OTA_FLAG_ADDR      0x000000
-#define OTA_SLOT_A_ADDR   0x010000
-#define OTA_SLOT_B_ADDR   0x080000
-
-void bsp_w25q64_init(void);
-void bsp_w25q64_read(uint32_t addr, uint8_t *buf, uint32_t len);
-void bsp_w25q64_write(uint32_t addr, uint8_t *buf, uint32_t len);
-void bsp_w25q64_erase_sector(uint32_t addr);
-void bsp_w25q64_erase_chip(void);
-uint32_t bsp_w25q64_read_id(void);
-
-// OTA 标志操作
-ota_flag_t* ota_flag_read(void);
-int ota_flag_write(ota_flag_t *flag);
-void ota_flag_clear(void);
-
-// OTA 搬运
-int ota_copy_to_flash(ota_slot_t target_slot, void (*progress_cb)(uint8_t percent));
-```
-
-### 9.9 后续迁移到 NAND（时间表）
-
-| 阶段 | 内容 | 目标时间 |
-|------|------|---------|
-| Phase 1 | W25Q64 OTA 验证完成，稳定运行 1 个月 | 第 1–2 个月 |
-| Phase 2 | NAND 驱动适配，坏块表设计 | 第 3 个月 |
-| Phase 3 | NAND OTA 双槽位实现 | 第 4 个月 |
-| Phase 4 | W25Q64 降级为字库/资源存储，NAND 正式上线 | 第 5 个月 |
+- YMODEM 接收固件直接写入目标 Flash 槽位（非 W25Q64 暂存）
+- 升级前校验 reset-handler 合法地址（防错包写入后跳转 HardFault）
+- 回滚免 Flash 搬运（直接切换活跃标记）
 
 ---
 
-## 10. CAN 通信协议草案
+## 10. CAN 通信协议
+
+> 当前项目使用 29-bit 扩展帧协议，定义在 `project/display_ecu_f429/protocol/CAN_Protocol.h` 和 `project/power_ecu_f103/protocol/CAN_Protocol.h`。ID 编解码和基础收发已实现，但心跳 mode 和电机状态帧解析仍需对齐。
 
 ### 10.1 基础参数
 
 | 参数 | 值 |
 |------|-----|
-| 波特率 | 500 kbps |
-| 显示域节点 | 0x0A |
-| 动力域节点 | 0x0B |
+| 波特率 | 500 kbps (Prescaler=9, BS1=7tq, BS2=2tq @ 45MHz APB1) |
+| 帧格式 | 29-bit 扩展帧 |
+| 本机地址 | CAN_ADDR_MAINBOARD (0x01) |
+| 对端地址 | CAN_ADDR_MOTORBOARD (0x02) |
 | 终端电阻 | 120 Ω × 2 (总线两端) |
 
-### 10.2 CAN 帧 ID 定义
+### 10.2 CAN ID 编码（29-bit 扩展帧）
 
-| 帧类型 | CAN ID | 方向 | DLC | 说明 |
-|--------|--------|------|-----|------|
-| 电机控制帧 | **0x100** | F429 → F103 | 8 | 显示域发送控制命令 |
-| 电机状态帧 | **0x180** | F103 → F429 | 8 | 动力域上报电机状态 |
-| 诊断请求帧 | 0x181 | F429 → F103 | 8 | 诊断命令 |
-| 诊断响应帧 | 0x181 | F103 → F429 | 8 | 诊断数据 |
-| 心跳帧 | 0x1FF | F103 → F429 | 2 | F103 存活确认 |
-
-### 10.3 帧字段详细定义
-
-#### 电机控制帧 (ID: 0x100, 8 字节)
-
-| 字节 | 字段 | 类型 | 说明 |
-|------|------|------|------|
-| 0 | enable | uint8_t | 电机使能：0=停止，1=使能 |
-| 1 | direction | uint8_t | 方向：0=正向，1=反向 |
-| 2–3 | target_speed | int16_t | 目标速度 (rpm) |
-| 4–5 | reserved | int16_t | 预留（PWM 占空比扩展）|
-| 6–7 | crc16 | uint16_t | CRC16 校验 (Modbus) |
-
-#### 电机状态帧 (ID: 0x180, 8 字节)
-
-| 字节 | 字段 | 类型 | 说明 |
-|------|------|------|------|
-| 0 | status | uint8_t | 运行状态：0=停止，1=运行，2=错误 |
-| 1 | error_code | uint8_t | 错误码：0=正常，1=过流，2=堵转 |
-| 2–3 | current_speed | int16_t | 实际速度 (rpm) |
-| 4–5 | current | int16_t | 电流 (mA) |
-| 6–7 | crc16 | uint16_t | CRC16 校验 |
-
-#### 心跳帧 (ID: 0x1FF, 2 字节)
-
-| 字节 | 字段 | 类型 | 说明 |
-|------|------|------|------|
-| 0 | heartbeat | uint8_t | 计数器，每 100ms 递增 |
-| 1 | power_voltage | uint8_t | 电源电压 × 10 (如 120 = 12.0V) |
-
-### 10.4 CAN 过滤器配置（F429）
-
-```c
-CAN_FilterTypeDef filter = {0};
-filter.FilterBank = 0;
-filter.FilterMode = CAN_FILTERMODE_IDLIST;
-filter.FilterScale = CAN_FILTERSCALE_32BIT;
-// 32 位模式下，IdHigh 和 IdLow 各存一个 ID
-filter.FilterIdHigh = (0x180 << 5);         // 电机状态帧
-filter.FilterIdLow  = (0x1FF << 5);         // 心跳帧
-filter.FilterMaskIdHigh = 0xFFFF;
-filter.FilterMaskIdLow = 0xFFFF;
-filter.FilterFIFOAssignment = CAN_RX_FIFO0;
-filter.FilterActivation = ENABLE;
-filter.SlaveStartFilterBank = 14;
-HAL_CAN_ConfigFilter(&hcan1, &filter);
+```
+[28:26] prio   [25:22] src   [21:18] dst   [17:16] ftype   [15:6] mode   [5:0] func
 ```
 
-> **注意**：
-> - CAN1 必须使用 PB8/PB9（Remap 模式），因为 PA9/PA10 被 CH340 占用
-> - 诊断帧 (0x181) 可在应用层根据需求灵活处理
-> - 发送帧 (0x100) 无需配置过滤器，F103 会自动接收
+使用宏 `CAN_ID_BUILD(prio, src, dst, ftype, mode, func)` 或函数 `CanProto_EncodeId()` 构造 ID。
+
+### 10.3 当前已实现的帧
+
+| 帧 | 周期 | 方向 | 说明 |
+|----|------|------|------|
+| 心跳帧 | 500ms | F429 → 广播 | 当前 F429 代码使用 mode=0x000；F103 已按 mode=0x320 发送，协议待统一 |
+| 电机控制帧 | 10ms 限频 | F429 → F103 | `MODE_ID_CTRL_LF` 0x020，速度/角度；当前传感器接口返回 0，且只发送左电机控制帧 |
+| 电机状态帧 | 10ms | F103 → F429 | `MODE_ID_STATUS_MOTOR` 0x110，左右电机各一帧；F429 当前尚未解析 |
+| 测试帧 | 按键触发 | F429 → 广播 | 8 字节递增测试数据 |
+
+### 10.4 CAN 通信架构
+
+```
+TX: 应用层 → ModCanFrame → Mod_Can_TxEvent() → CanTxQueue (FIFO 64)
+      → ModCommCan_Tx() → CanTxMsg → CAN_Transmit() → 硬件邮箱
+      邮箱满 → xQueueSendToFront 回灌队首，break
+
+RX: CAN FIFO0 ISR → Mod_Can_RxIRQHandler() → CanRxQueue (FIFO 64)
+      → Mod_Can_RxTask() → ModCommCan_OnRxFrame() (弱符号)
+```
 
 ---
 
 ## 11. 软件模块拆分
 
-### 11.1 仓库目录结构
+### 11.1 实际目录结构
 
 ```
-Car_Panel/
-├── docs/
-│   ├── Car_Panel_Project_Plan.md      # 原 F407 方案
-│   ├── Car_Panel_F429_Project_Plan.md # 本文档 (v2.1)
-│   └── schematic/
-├── display_ecu_f429/                  # 显示域工程
-│   ├── bootloader/
-│   ├── app/
-│   ├── common/
-│   └── tools/
-├── power_ecu_f103/                    # 动力域工程（不变）
-└── tools/
+project/display_ecu_f429/
+├── app/                  BSP 驱动层
+│   ├── bsp_can.c/h       ✅ CAN 初始化 + 滤波器
+│   ├── bsp_led.c/h       ✅ LED 驱动 (4 路)
+│   ├── bsp_key.c/h       ✅ 按键扫描 (20ms, FreeRTOS 信号量)
+│   ├── bsp_log.h         ✅ 日志宏 (LOG_E/W/I/D → printf)
+│   └── main.c/h          ✅ App 入口
+├── bootloader/           ✅ YMODEM OTA + 真 AB 分区
+│   ├── boot_decision.c   ✅ CRC32 校验 + 选址 + 回滚
+│   └── ota_params.c      ✅ Sector 4 append-only 日志
+├── components/           目前为备用环形队列
+│   └── my_queue.c/h
+├── driver/               底层驱动
+│   ├── Delay.c/h         (App 内应使用 vTaskDelay)
+│   ├── usart.c/h         ✅ printf 重定向 + 环形缓冲 RX
+│   └── mod_motor.c/h     占位 (返回 0.0f)
+├── firmware/             CMSIS + STM32F4xx SPL
+├── protocol/             CAN 协议定义
+│   └── CAN_Protocol.h    ✅ 29-bit ID 编解码
+├── task/                 FreeRTOS 任务
+│   ├── task_entry.c      ✅ 初始化入口 + 任务创建
+│   ├── mod_comm_can.c/h  ✅ CAN TX/RX 框架
+│   ├── task_comm_can_protocol.c/h ✅ CAN 协议层
+│   └── task_query.c/h    ✅ UART 查询服务
+├── mdk/                  Keil 工程 + scatter 文件
+└── third_lib/            FreeRTOS v11.3.0
 ```
 
-### 11.2 显示域 F429 App 工程结构
+> SPI LCD、FT6336G 触摸、LVGL 移植和显示任务均尚未创建，规划文件位于
+> `project/display_ecu_f429/docs/spi_touch_screen_plan.md`。
 
-```
-display_ecu_f429/
-├── app/
-│   ├── Core/Src/
-│   │   ├── main.c
-│   │   ├── freertos.c
-│   │   ├── bsp_can.c
-│   │   ├── bsp_ltdc.c          # LTDC 配置
-│   │   ├── bsp_sdram.c         # SDRAM 初始化
-│   │   ├── bsp_dma2d.c         # DMA2D 封装
-│   │   ├── bsp_touch.c
-│   │   ├── bsp_w25q64.c        # OTA + 升级标志
-│   │   ├── bsp_key.c
-│   │   ├── bsp_led.c
-│   │   ├── bsp_uart.c
-│   │   ├── bsp_log.c
-│   │   ├── can_app.c
-│   │   ├── lvgl_port.c
-│   │   └── ui/
-│   │       ├── ui_main.c
-│   │       ├── ui_diag.c
-│   │       ├── ui_ota.c
-│   │       └── ui_assets.c
-│   ├── lvgl/
-│   └── MDK-ARM/
-└── common/
-    ├── protocol/
-    ├── bsp/
-    └── linker/
-```
+### 11.2 FreeRTOS 任务规划
 
-### 11.3 FreeRTOS 任务规划
-
-| 任务 | 优先级 | 栈 (words) | 周期 | 说明 |
-|------|-------|-----------|------|------|
-| CAN_Rx | 5 | 512 | 事件驱动 | |
-| LVGL_Tick | 3 | 256 | 5 ms | |
-| LVGL_Task | 2 | 4096 | 事件驱动 | 全屏刷新，栈增大 |
-| UI_Update | 3 | 1024 | 16 ms | 60 fps 目标 |
-| Key_Scan | 4 | 256 | 20 ms | |
-| Touch_Scan | 4 | 512 | 10 ms | |
-| OTA_Task | 3 | 1024 | 事件驱动 | |
-| Log_Task | 1 | 512 | 100 ms | |
-| Watchdog | 6 | 128 | 1000 ms | |
-| Idle | 0 | 256 | — | |
-
-FreeRTOS 堆建议 **60–80 KB**（片上 RAM + SDRAM）。
+| 任务 | 栈 | 优先级 | 周期 | 状态 |
+|------|-----|--------|------|------|
+| ALL_Task_Entry | 256 | 30 | 一次性 | ✅ 初始化入口 |
+| CAN_TX | 512 | 3 | 1ms | ✅ CAN 帧发送 |
+| CAN_RX | 512 | 3 | 事件 | ✅ CAN 帧接收 |
+| CAN_TEST | 256 | 3 | 事件 | ✅ 测试发送 |
+| KEY_SCAN | 256 | 2 | 20ms | ✅ 按键扫描 |
+| HEARTBEAT | 512 | 1 | 500ms | ✅ 心跳 |
+| UART_QUERY | 256 | 2 | 事件 | ✅ 查询协议 |
+| **DISPLAY** | **1024** | **2** | **5ms** | ⏳ LVGL 渲染（待开发）|
 
 ---
 
 ## 12. 开发阶段计划
 
-> **里程碑时间表**（可根据实际情况调整）
+| 阶段 | 内容 | 状态 |
+|------|------|------|
+| Phase 0 | 硬件验证 | ⏳ 未完成（硬件尚未全面验证） |
+| Phase 1 | Bootloader + 真 AB 分区 | ✅ 完成 |
+| Phase 2 | FreeRTOS + CAN 通信框架 | ✅ 完成 |
+| Phase 3 | 动力域 + CAN 协议层 | ⏳ 代码已完成主要部分，硬件及端到端联调未验证 |
+| Phase 4 | **SPI LCD + I2C 触摸驱动** | ⏳ 当前阶段 |
+| Phase 5 | LVGL 移植 + 显示任务 | ⏳ 待开始 |
+| Phase 6 | 仪表盘 UI 开发 + 集成测试 | ⏳ 待开始 |
 
-| 阶段 | 内容 | 预计周期 |
-|------|------|---------|
-| Phase 0 | 硬件验证 | 1 周 |
-| Phase 1 | LTDC + RGB LCD | 1 周 |
-| Phase 2 | DMA2D + LVGL 最小显示 | 1–2 周 |
-| Phase 3 | Bootloader + 最小 App | 1 周 |
-| Phase 4 | W25Q64 OTA 验证 | 2 周 |
-| Phase 5 | 动力域 + CAN 闭环 | 2 周 |
-| Phase 6 | 完整 UI + 集成 | 2–3 周 |
+### Phase 4 (当前)：SPI LCD + I2C 触摸驱动
 
-### Phase 0：硬件验证
+- [ ] 将 `stm32f4xx_spi.c`、`stm32f4xx_i2c.c` 加入 Keil 工程；仅在选用 DMA 发送时再加入 `stm32f4xx_dma.c`
+- [ ] 创建 `bsp_spi_lcd.c/h`：SPI2 初始化 + ILI9341V 初始化序列
+- [ ] 创建 `bsp_i2c_touch.c/h`：I2C1 初始化 + FT6336G 坐标读取
+- [ ] 添加 EXTI8/I2C ISR 空桩到 `firmware/cmsis/device/stm32f4xx_it.c`
+- [ ] 编译验证（0 error 0 warning, 双 Target）
 
-- [ ] F429 最小系统上电，确认 VCAP 已接
-- [ ] 串口打印 Hello（CH340）
-- [ ] SWD 下载调试验证
-- [ ] SDRAM 读写测试
-- [ ] 点亮板上 LED（注意高电平点亮）
+### Phase 5：LVGL 移植
 
-### Phase 1：LTDC + RGB LCD
+- [ ] 复制 LVGL v8.x 源码到 `third_lib/lvgl/`
+- [ ] 创建 `lv_conf.h`（RGB565, 240×320, 双缓冲 28.8KB）
+- [ ] 创建 `lvgl_port_disp.c` + `lvgl_port_touch.c`
+- [ ] 将 LVGL 源文件和移植文件加入 Keil 工程
+- [ ] 编译验证
 
-- [ ] LTDC 时钟配置
-- [ ] GPIO LTDC 引脚映射（参考 §3.3 接线表）
-- [ ] 配置 4.3 寸 RGB LCD（480×272）
-- [ ] 显示纯色测试
+### Phase 6：仪表盘 + 集成
 
-### Phase 2：DMA2D + LVGL 最小显示
+- [ ] 创建 `task_display.c`（5ms LVGL 任务）
+- [ ] 修改 `task_entry.c`：新增初始化调用 + DISPLAY 任务
+- [ ] 测试 UI：全屏纯色 → Label "Hello" → Arc 动画
+- [ ] 触摸交互验证
+- [ ] CAN 数据驱动 UI
+- [ ] 30 分钟稳定性验证
 
-- [ ] 移植 LVGL v8
-- [ ] 配置 SDRAM 全屏双缓冲
-- [ ] 实现 DMA2D flush_cb
-- [ ] 显示主仪表页，测量 FPS（目标 ≥ 50）
-
-### Phase 3：Bootloader + 最小 App
-
-- [ ] 编写 F429 Bootloader（128 KB）
-- [ ] 编写最小 App（从 0x08020000 启动）
-- [ ] 验证 VTOR 设置、跳转
-
-### Phase 4：W25Q64 OTA 验证
-
-- [ ] W25Q64 SPI Flash 驱动（CS = PI4）
-- [ ] YMODEM 协议实现
-- [ ] OTA 完整流程验证（固件接收、CRC32 校验）
-- [ ] 升级标志读写验证
-- [ ] Bootloader 固件搬运验证
-- [ ] 双槽位回退机制验证
-
-### Phase 5：动力域 + CAN 闭环
-
-- [ ] F103 CAN 通信
-- [ ] 电机 PWM 控制
-- [ ] 编码器测速
-- [ ] PID 闭环
-
-### Phase 6：完整 UI + 集成
-
-- [ ] 仪表盘页面开发
-- [ ] 触摸驱动
-- [ ] 完整 UI 动画
-- [ ] 性能优化
-
----
+详细实施计划见 `project/display_ecu_f429/docs/spi_touch_screen_plan.md`。
 
 ---
 
 ## 13. 烧录与下载方式
 
-F429 有两种烧录途径，**开发期首选 SWD（一键）**，ISP 作为无调试器时的备用手段。
+开发期首选 **SWD**（PA13/PA14），ISP 作为备用。
 
-### 13.1 两种方式对比
-
-| 对比项 | **SWD（推荐）** | ISP / 系统 bootloader |
-|--------|----------------|----------------------|
-| 接口 | SWDIO(PA13) + SWCLK(PA14) + NRST | USART1(PA9/PA10, 经 CH340) 或 USB |
-| 是否一键 | ✅ 插上 USB，IDE 选 SWD 直接烧 | ❌ 通常需配合 BOOT 引脚 |
-| 是否需要动 BOOT0 | 不需要 | **需要**（BOOT0=1 进入 bootloader）|
-| 烧录速度 | 快 | 慢（串口波特率限制）|
-| 能否在线调试 | ✅ 支持断点/单步 | ❌ 不能 |
-| 适用场景 | 日常开发、调试 | 无 SWD 调试器时的应急烧录 |
-
-### 13.2 方式一：SWD 一键烧录（首选）
-
-**前提**：板载调试器（板载 F103 桥接或外接 ST-Link/J-Link/DAP）已通过 SWD 接到 F429 的 PA13/PA14/NRST。
-
-**操作**：
-1. 一根 USB 线连到调试器（板载 USB 口）
-2. Keil/CubeIDE/STM32CubeProgrammer 里 Debug 选 **ST-Link**（或 CMSIS-DAP）
-3. 点 Download，**无需碰 BOOT 跳线**，直接烧进 Flash
-4. 烧完自动复位运行
-
-> **BOOT 引脚状态**：SWD 烧录时 BOOT0 保持 0（正常从 Flash 启动）即可。SWD 通过 NRST + SWDIO/SWCLK 强制接管内核读写 Flash，与 BOOT0 无关。
-
-### 13.3 方式二：ISP 串口烧录（备用）
-
-**前提**：仅有一条 USB-TTL（CH340 接 PA9/PA10），没有 SWD 调试器。
-
-**F429 进入系统 bootloader 的条件**：
-
-| BOOT0 | BOOT1(=PB2) | 启动方式 |
-|-------|-------------|---------|
-| 0 | X | **正常从 Flash 启动**（运行用户程序）|
-| **1** | **0** | **从系统存储器启动（ISP bootloader）** |
-| 1 | 1 | 从内置 SRAM 启动 |
-
-**操作**：
-1. 跳线/按键把 **BOOT0 拉到 1**，BOOT1(PB2) 保持 0
-2. 按复位（或重新上电），F429 进入 ROM bootloader（地址 0x1FFF0000）
-3. 打开 STM32CubeProgrammer / Flash Loader Demo，选 USART，连 PA9/PA10
-4. 烧录 .hex/.bin
-5. **BOOT0 拉回 0**，复位运行
-
-> ⚠️ ISP 方式**不能一键**：每次烧录前后都要切换 BOOT0，否则复位后跑的是旧程序或停在 bootloader。
-
-### 13.4 BOOT 跳线说明（本板）
-
-| 信号 | 位置 | 默认 | 说明 |
-|------|------|------|------|
-| BOOT0 | 独立引脚（Pin 166），板载跳线/按键 | **0** | 0=Flash 运行，1=进入 ISP |
-| BOOT1 | PB2 | 0 | ISP 模式下需为 0 |
-
-**建议**：板上 BOOT0 默认接 0（跳线帽常态）。只有走 ISP 串口烧录时才临时切到 1，烧完务必切回，否则下次复位会停在 bootloader，App 不启动。
-
-### 13.5 与 OTA 的关系
-
-| 烧录方式 | 用途 |
-|---------|------|
-| SWD | 开发期烧 Bootloader、烧 App、在线调试 |
-| ISP | 无 SWD 时的应急烧录（基本不用）|
-| **OTA（W25Q64 + YMODEM）** | **产品期远程升级，完全不依赖 SWD/ISP/BOOT** |
-
-> OTA 走的是 App → W25Q64 → Bootloader 搬运的软件通道，**与 BOOT0 无关**，是最终交付的升级方式。
+- **SWD**：插上 USB，Keil/IDE 选 ST-Link 直接烧，无需 BOOT 操作
+- **ISP**：BOOT0=1 → 复位 → STM32CubeProgrammer 串口烧录 → BOOT0=0
+- **OTA**：YMODEM 串口传输 + 内部 Flash 真 AB 分区，与 BOOT0 无关
 
 ---
 
@@ -974,81 +573,41 @@ F429 有两种烧录途径，**开发期首选 SWD（一键）**，ISP 作为无
 ### 14.1 常见问题
 
 | 现象 | 排查 |
-|---|---|
+|------|------|
 | F429 反复复位 | 检查 VCAP_1/VCAP_2 是否接 2.2 µF |
-| SWD 连不上 | 检查 PA13/PA14/NRST 接线；BOOT0 是否误设为 1 |
-| ISP 烧录识别不到 | 确认 BOOT0=1 且已复位进入 bootloader，串口波特率 |
-| 复位后停在 bootloader/不启动 App | BOOT0 没切回 0 |
-| 黑屏 | 检查 LCD 电源、LTDC 时钟、引脚映射 |
-| 花屏 | 检查 RGB 时序参数（HSYNC/VSYNC/DE）|
-| LVGL FPS 低 | 检查 DMA2D 是否启用，SDRAM 是否正常 |
-| CAN 收不到 | 检查 PB8/PB9 Remap 配置、终端电阻 |
-| CAN Bus-Off | 检查 CAN 总线接线、终端电阻、CANH/CANL 反接；重启 CAN 外设 |
-| Bootloader 跳转 App HardFault | 检查 VTOR 是否设置、栈指针是否合法 |
-| SDRAM 读写错误 | 检查 FMC SDRAM 初始化时序 |
-| OTA 升级后白屏 | 检查 App Flash CRC32 是否正确，新固件是否兼容 |
-| OTA 升级后卡在 Bootloader | 检查 W25Q64 固件区是否损坏，尝试重新升级 |
+| SWD 连不上 | 检查 PA13/PA14/NRST；BOOT0 是否误设为 1 |
+| **LCD 黑屏** | 检查 SPI2 时钟/数据、RST 复位时序、背光 BL 引脚 |
+| **LCD 花屏** | 检查 SPI 模式 (CPHA=0,CPOL=0)、像素格式 (0x3A=0x55)、MADCTL (0x36=0x08) |
+| **触摸无反应** | 检查 I2C1 SCL/SDA、FT6336G 芯片 ID (0xA8=0x11)、INT 配置 |
+| CAN 收不到 | 检查 PA11/PA12 默认引脚配置、终端电阻、波特率 |
+| CAN Bus-Off | 检查接线、终端电阻、CANH/CANL 反接 |
+| Bootloader 跳转 HardFault | 检查 VTOR、栈指针、reset-handler 地址 |
+| LVGL 断言失败 | `draw_buf` 不能放 CCM（DMA 不可达），必须主 SRAM |
 
 ### 14.2 LVGL 调试
 
 - 开启 `LV_USE_PERF_MONITOR` 观察 FPS 和 CPU 占用
-- 开启 `LV_USE_ASSERT_HANDLER` 捕获断言失败
-- 常见 LVGL 断言失败原因：
-  - `draw_buf` 放错内存区域（需在 SDRAM）
-  - `lv_area_t` 坐标超出屏幕范围
-  - 多线程访问同一对象未加锁
-
-### 14.3 CAN Bus-Off 处理
-
-CAN 控制器进入 Bus-Off 状态后需自动恢复：
-
-```c
-void HAL_CAN_ErrorCallback(CAN_HandleTypeDef *hcan)
-{
-    uint32_t err = HAL_CAN_GetError(hcan);
-
-    if (err & HAL_CAN_ERROR_BOF) {
-        // Bus-Off：关闭 → 重新初始化 → 启动
-        HAL_CAN_Stop(&hcan1);
-        HAL_CAN_Start(&hcan1);
-        LOG_W("CAN Bus-Off, reconnected");
-    }
-}
-```
-
-### 14.4 OTA 调试
-
-| 问题 | 排查 |
-|------|------|
-| YMODEM 传输失败 | 检查串口流控、缓冲区大小、超时设置 |
-| CRC32 校验失败 | 传输过程干扰，检查线缆质量 |
-| Bootloader 跳转后 HardFault | 检查 App 入口函数 `Reset_Handler` 地址、栈指针 |
-| 升级后 App 异常 | 检查 `SystemInit()` 中 SCB->VTOR 设置 |
-
-### 14.5 性能测量
-
-- 开启 `LV_USE_PERF_MONITOR` 观察 FPS 和 CPU 占用
-- 目标：RGB LCD 全屏 ≥ 50 fps，CPU 占用 < 60%
+- 开启 `LV_LOG_LEVEL` 输出调试信息
+- 关键约束：双缓冲 `draw_buf` 必须分配在主 SRAM (`0x2000xxxx`)，**禁止 CCM**
 
 ---
 
 ## 15. 采购清单
 
-### 15.1 必买清单
+### 15.1 已购买
+
+- STM32F429IGT6 核心板（板载 SDRAM/NAND，当前软件不使用）
+- STM32F103C8T6 核心板
+- TJA1050 CAN 收发器 ×2（采购/连接状态需现场确认）
+- DRV8833 ×2 + MG310 ×2 电机套件（代码已实现，硬件未验证）
+- ST-Link / USB-TTL
+
+### 15.2 待购买
 
 | 类别 | 型号 | 数量 | 说明 |
 |------|------|------|------|
-| RGB LCD | 4.3/5/7 寸 RGB565 带触摸 | 1 | 本方案核心 |
-| W25Q64 模块 | SPI Flash 8 MB | 1 | OTA 验证阶段 |
-| CAN 收发器 | TJA1050 / SN65HVD230 | 2 | 与原方案一致 |
-
-### 15.2 已有清单（不需再买）
-
-- STM32F429IGT6 核心板（带 SDRAM/NAND）
-- STM32F103C8T6 核心板
-- TJA1050 ×1
-- BTS7960 / JGA25-370
-- ST-Link / USB-TTL
+| SPI 触摸屏 | **MSP2834 (ILI9341V + FT6336G)** | 1 | 2.8 寸, SPI2 + I2C1；按用户手册建议 5V 供电 |
+| 14P FPC 排线 | 0.5mm 间距, 反向 | 1 | 模块配件已包含 |
 
 ---
 
@@ -1056,32 +615,27 @@ void HAL_CAN_ErrorCallback(CAN_HandleTypeDef *hcan)
 
 - STM32F429xx Reference Manual (RM0090)
 - STM32F429IGT6 Datasheet
-- STM32F4xx HAL Library User Manual
-- W9825G6KH SDRAM Datasheet
-- W29N01HV NAND Flash Datasheet
+- MSP2834 用户手册 + 规格书：`docs/schematic/MSP2834/MSP2834/`
+- ILI9341 数据手册：`docs/schematic/MSP2834/MSP2834/ILI9341_Datasheet.pdf`
+- ILI9341V 初始化序列：`docs/schematic/MSP2834/MSP2834/ILI9341V_Init.txt`
+- FT6336G 数据手册：`docs/schematic/MSP2834/MSP2834/D-FT6336G-DataSheet-V1.0.pdf`
+- FT6336G 寄存器表：`docs/schematic/MSP2834/MSP2834/FT6336G_Register.xlsx`
 - LVGL v8 官方文档：https://docs.lvgl.io/8.3/
-- 原方案：`Car_Panel_Project_Plan.md`
-
-## 附录 B：原理图来源
-
-- `C:\Users\LD1702\Desktop\stm32f429\extracted\schematic_for_ai.md`
-- 高清原理图：`C:\Users\LD1702\Desktop\stm32f429\extracted\pages_png\page_01.png`
+- SPI 触摸屏实施计划：`project/display_ecu_f429/docs/spi_touch_screen_plan.md`
+- 原 F407 方案（历史）：`docs/Car_Panel_Project_Plan.md`
 
 ---
 
 > 文档版本历史：
 > - v1.0：基于 F407 方案改写
-> - v2.0：基于实际原理图重构，适配 LTDC RGB 屏 + SDRAM 全屏双缓冲
-> - v2.1：简化方案，升级标志存储改用 W25Q64（暂不使用 F103 I2C）
-> - v2.2：新增第 13 章「烧录与下载方式」，明确 SWD 一键烧录 vs ISP（需 BOOT0 配合）
-> - v2.3：修正 §8.3 DMA2D 轮询→中断+OOR、§8.1 draw_buf 必须放 SDRAM、§3.1/§5.2 SDRAM Bank2→Bank1 及 FMC_SDNWE(PC3→PC0)、§3.2 PD0/PD1 HSE 说法错误、§3.2 PC3 冲突重写、§3.1 FMC_SDCLK 重复行删除
-> - **v2.4（本次）**：
->   - 修正 FMC 引脚冲突：FMC_SDNE0(B6)；NAND NWE 独立到 PC6
->   - 修正 LTDC 引脚：HSYNC 改到 PI3，LTDC_R2 改到 PI0，避开 PC3 冲突
->   - W25Q64_CS 从 PI3 改为 PI4
->   - **删除错误的 F103CBT6 I2C 连接**：板载 F103CBT6 仅用于 USB/UART 桥接 CH340N，无独立引脚引出
->   - 新增 CAN 协议完整帧定义（ID 0x100/0x180/0x1FF 字段表）
->   - 新增 OTA 双槽位回退机制、A/B 槽选择逻辑、搬运中断处理（掉电保护）
->   - 新增 OTA 调试章节、NAND 迁移时间表
->   - 新增 CAN Bus-Off 处理、LVGL 断言调试
->   - 新增开发阶段里程碑时间表
+> - v2.0–v2.4：LTDC RGB + SDRAM + W25Q64 方案（已废弃，方案变更）
+> - **v3.0（历史）**：
+>   - **方案变更**：LTDC/LED → MSP2834 SPI 2.8 寸触摸屏（ILI9341V + FT6336G）
+>   - **移除**：SDRAM、NAND、DMA2D、W25Q64 全部不使用
+>   - **OTA**：W25Q64 暂存 → 内部 Flash 真 AB 分区（已实现）
+>   - **更新**：全部章节根据实际开发进度重写（Bootloader + CAN + FreeRTOS 已完成）
+>   - **新增**：FT6336G 寄存器映射、ILI9341V 初始化序列、LVGL SPI 移植方案
+>   - 新增 SPI 触摸屏实施计划：`project/display_ecu_f429/docs/spi_touch_screen_plan.md`
+> - **v3.1（当前）**：
+>   - 修正 F429 CAN 实际引脚为 PA11/PA12 默认映射
+>   - 修正 VCAP_1/VCAP_2 为 Pin 81/125，并同步双电机动力域器件与当前 CAN 实现状态

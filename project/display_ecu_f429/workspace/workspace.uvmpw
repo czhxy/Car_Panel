@@ -14,8 +14,11 @@
   </project>
 
   <project>
+    <PathAndName>..\mdk\app_b.uvprojx</PathAndName>
+  </project>
+
+  <project>
     <PathAndName>..\mdk\boot.uvprojx</PathAndName>
-    <NodeIsExpanded>1</NodeIsExpanded>
   </project>
 
 </ProjectWorkspace>
