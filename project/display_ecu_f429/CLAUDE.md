@@ -19,7 +19,9 @@
 
 ## 当前状态概要
 
-CAN 通信框架完整运行（TX/RX 双队列、中断接收、心跳、ID 编解码、电机控制帧周期发送）。关键短板：MSP2834 SPI LCD（ILI9341V）驱动和 LVGL 仪表盘 UI 完全未开发。
+CAN 通信框架完整运行（TX/RX 双队列、中断接收、心跳、ID 编解码、电机控制帧周期发送）。SPI5 ILI9341 LCD 驱动和 I2C1 FT6336G 触摸驱动已完成，LCD 演示任务运行中。下一阶段：LVGL 仪表盘 UI。
+
+**详细进度 → [`HANDOFF.md`](./HANDOFF.md)**
 
 **详细进度 → [`HANDOFF.md`](./HANDOFF.md)**
 
@@ -55,13 +57,14 @@ display_ecu_f429/
 
 | 任务 | 栈 | 优先级 | 函数 |
 |---|---|---|---|
-| ALL_Task_Entry | 256 字 | 30 | 一次性初始化入口，创建以下 6 个任务 |
-| CAN_TX | 512 字 | 3 | `Mod_Can_TxTask` |
-| CAN_RX | 512 字 | 3 | `Mod_Can_RxTask` |
-| CAN_TEST | 256 字 | 3 | `CAN_Test_Task` |
+| ALL_Task_Entry | 256 字 | 30 | 一次性初始化入口，创建以下 7 个任务 |
+| CAN_TX | 512 字 | 4 | `Mod_Can_TxTask` |
+| CAN_RX | 512 字 | 4 | `Mod_Can_RxTask` |
+| CAN_TEST | 256 字 | 4 | `CAN_Test_Task` |
 | KEY_SCAN | 256 字 | 2 | `prvKeyScanTask` |
 | HEARTBEAT | 512 字 | 1 | `Heartbeat_Task` |
 | UART_QUERY | 256 字 | 2 | `UART_Query_Task` |
+| LCD_DEMO | 512 字 | 3 | `Task_LCD_Demo` |
 
 ## CAN 通信架构
 
@@ -108,6 +111,17 @@ RX: CAN FIFO0 ISR → Mod_Can_RxIRQHandler() → CanRxQueue (FreeRTOS队列, 深
 | CAN1_RX | PA11 | 已实现 |
 | USART1_TX | PA9 | printf 日志输出 |
 | USART1_RX | PA10 | 查询协议命令接收 |
+| SPI5_SCK | PF7 | LCD SPI 时钟 |
+| SPI5_MISO | PF8 | LCD SPI 数据读 |
+| SPI5_MOSI | PF9 | LCD SPI 数据写 |
+| LCD_RS | PI8 | LCD 命令/数据 |
+| LCD_RST | PI9 | LCD 复位 |
+| LCD_CS | PI10 | LCD 片选 |
+| LCD_BL | PD6 | LCD 背光 |
+| I2C1_SCL | PB6 | 触摸 I2C 时钟 |
+| I2C1_SDA | PB7 | 触摸 I2C 数据 |
+| CTP_INT | PB8 | 触摸中断 |
+| CTP_RST | PB9 | 触摸复位 |
 | LED1 | PH12 | 心跳指示 |
 | LED2 | PH10 | — |
 | LED3 | PH11 | — |

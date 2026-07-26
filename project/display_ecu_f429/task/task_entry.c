@@ -74,7 +74,7 @@ void Task_Entry_All(void * pvParameters)
         LOG_E("[Main] HEARTBEAT task create failed!\r\n");
     if (xTaskCreate(UART_Query_Task,  "UART_QUERY", 256, NULL, 2, NULL) != pdPASS)
         LOG_E("[Main] UART_QUERY task create failed!\r\n");
-    if (xTaskCreate(Task_LCD_Demo,    "LCD_DEMO",   512, NULL, 3, NULL) != pdPASS)
+    if (xTaskCreate(Task_LCD_Demo,    "LCD_DEMO",  1024, NULL, 3, NULL) != pdPASS)
         LOG_E("[Main] LCD_DEMO task create failed!\r\n");
 
     vTaskDelete(NULL);

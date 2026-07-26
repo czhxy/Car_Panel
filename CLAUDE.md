@@ -8,7 +8,7 @@
 
 | ECU | MCU | 职责 | 当前状态 |
 |---|---|---|---|
-| 显示域 | STM32F429IGT6 @ 180MHz | Bootloader/YMODEM OTA、SPI LCD (ILI9341V)、LVGL UI、CAN 通信 | CAN 通信完整，SPI LCD/UI 待开发 |
+| 显示域 | STM32F429IGT6 @ 180MHz | Bootloader/YMODEM OTA、SPI LCD (ILI9341V)、LVGL UI、CAN 通信 | CAN + LCD/TOUCH 驱动完成，LVGL UI 待开发 |
 | 动力域 | STM32F103C8T6 @ 72MHz | 双电机编码器测速、PWM 电机控制、CAN 上报 | 左电机全链路已验证（PID+CAN+超时保护），右电机待接线 |
 
 通信：CAN 500kbps / 29-bit 扩展帧。
