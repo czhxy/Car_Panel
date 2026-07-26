@@ -479,6 +479,16 @@
               <FileType>5</FileType>
               <FilePath>..\app\bsp_key.h</FilePath>
             </File>
+            <File>
+              <FileName>bsp_spi_lcd.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\app\bsp_spi_lcd.c</FilePath>
+            </File>
+            <File>
+              <FileName>bsp_i2c_touch.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\app\bsp_i2c_touch.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
@@ -518,6 +528,21 @@
               <FileName>task_comm_can_protocol.h</FileName>
               <FileType>5</FileType>
               <FilePath>..\task\task_comm_can_protocol.h</FilePath>
+            </File>
+            <File>
+              <FileName>mod_gui.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\task\mod_gui.c</FilePath>
+            </File>
+            <File>
+              <FileName>mod_test.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\task\mod_test.c</FilePath>
+            </File>
+            <File>
+              <FileName>task_lcd_demo.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\task\task_lcd_demo.c</FilePath>
             </File>
           </Files>
         </Group>
@@ -681,6 +706,16 @@
               <FileName>stm32f4xx_can.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\firmware\driver\src\stm32f4xx_can.c</FilePath>
+            </File>
+            <File>
+              <FileName>stm32f4xx_spi.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\firmware\driver\src\stm32f4xx_spi.c</FilePath>
+            </File>
+            <File>
+              <FileName>stm32f4xx_i2c.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\firmware\driver\src\stm32f4xx_i2c.c</FilePath>
             </File>
           </Files>
         </Group>
