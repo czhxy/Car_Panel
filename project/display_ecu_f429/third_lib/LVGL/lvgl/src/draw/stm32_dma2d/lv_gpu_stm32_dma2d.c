@@ -11,6 +11,23 @@
 
 #if LV_USE_GPU_STM32_DMA2D
 
+/* 兼容本工程使用的旧版 STM32F4 CMSIS 位域定义 */
+#ifndef DMA2D_CR_MODE_Pos
+    #define DMA2D_CR_MODE_Pos             16U
+#endif
+#ifndef DMA2D_FGPFCCR_AM_Pos
+    #define DMA2D_FGPFCCR_AM_Pos          16U
+#endif
+#ifndef DMA2D_FGPFCCR_ALPHA_Pos
+    #define DMA2D_FGPFCCR_ALPHA_Pos       24U
+#endif
+#ifndef DMA2D_NLR_NL_Pos
+    #define DMA2D_NLR_NL_Pos              0U
+#endif
+#ifndef DMA2D_NLR_PL_Pos
+    #define DMA2D_NLR_PL_Pos              16U
+#endif
+
 /*********************
  *      DEFINES
  *********************/
@@ -82,7 +99,7 @@ static bool isDma2dInProgess = false; // indicates whether DMA2D transfer *initi
 void lv_draw_stm32_dma2d_init(void)
 {
     // Enable DMA2D clock
-#if defined(STM32F4) || defined(STM32F7) || defined(STM32U5)
+#if defined(STM32F4) || defined(STM32F429_439xx) || defined(STM32F7) || defined(STM32U5)
     RCC->AHB1ENR |= RCC_AHB1ENR_DMA2DEN; // enable DMA2D
     // wait for hardware access to complete
     __asm volatile("DSB\n");
@@ -282,7 +299,7 @@ static void lv_draw_stm32_dma2d_img_decoded(lv_draw_ctx_t * draw_ctx, const lv_d
 
 static lv_point_t lv_area_get_offset(const lv_area_t * area1, const lv_area_t * area2)
 {
-    lv_point_t offset = {x: area2->x1 - area1->x1, y: area2->y1 - area1->y1};
+    lv_point_t offset = {.x = area2->x1 - area1->x1, .y = area2->y1 - area1->y1};
     return offset;
 }
 
@@ -317,39 +334,11 @@ static dma2d_color_format_t lv_color_format_to_dma2d_color_format(lv_img_cf_t co
 lv_res_t lv_draw_stm32_dma2d_img(lv_draw_ctx_t * draw_ctx, const lv_draw_img_dsc_t * img_dsc,
                                  const lv_area_t * src_area, const void * src)
 {
-    //if(lv_img_src_get_type(src) != LV_IMG_SRC_VARIABLE) return LV_RES_INV;
+    LV_UNUSED(draw_ctx);
+    LV_UNUSED(img_dsc);
+    LV_UNUSED(src_area);
+    LV_UNUSED(src);
     return LV_RES_INV;
-    if(img_dsc->opa <= LV_OPA_MIN) return LV_RES_OK;
-    const lv_img_dsc_t * img = src;
-    const dma2d_color_format_t bitmapColorFormat = lv_color_format_to_dma2d_color_format(img->header.cf);
-    const bool ignoreBitmapAlpha = (img->header.cf == LV_IMG_CF_RGBX8888);
-
-    if(bitmapColorFormat == UNSUPPORTED || img_dsc->angle != 0 || img_dsc->zoom != LV_IMG_ZOOM_NONE) {
-        return LV_RES_INV; // sorry, dma2d can handle this
-    }
-
-    // FIXME: handle dsc.pivot, dsc.recolor, dsc.blend_mode
-    // FIXME: src pixel size *must* be known to use DMA2D
-    // FIXME: If image is drawn by SW, then output cache needs to be cleaned next. Currently it is not possible.
-    // Both draw buffer start address and buffer size *must* be 32-byte aligned since draw buffer cache is being invalidated.
-    //uint32_t drawBufferLength = lv_area_get_size(draw_ctx->buf_area) * sizeof(lv_color_t);
-    //LV_ASSERT_MSG(drawBufferLength % CACHE_ROW_SIZE == 0); // critical, but this is not the way to test it
-    //LV_ASSERT_MSG((uint32_t)draw_ctx->buf % CACHE_ROW_SIZE == 0, "draw_ctx.buf is not 32B aligned"); // critical?
-
-    // For performance reasons, both source buffer start address and buffer size *should* be 32-byte aligned since source buffer cache is being cleaned.
-    //uint32_t srcBufferLength = lv_area_get_size(src_area) * sizeof(lv_color_t); // TODO: verify src pixel size = sizeof(lv_color_t)
-    //LV_ASSERT_MSG(srcBufferLength % CACHE_ROW_SIZE == 0); // FIXME: assert fails (performance, non-critical)
-    //LV_ASSERT_MSG((uint32_t)src % CACHE_ROW_SIZE == 0); // FIXME: assert fails (performance, non-critical)
-
-    lv_area_t draw_area;
-    if(!_lv_area_intersect(&draw_area, src_area, draw_ctx->clip_area)) return LV_RES_OK;
-
-    lv_coord_t dest_stride = lv_area_get_width(draw_ctx->buf_area);
-    lv_point_t src_offset = lv_area_get_offset(src_area, &draw_area); // source image offset in relation to draw_area
-    lv_area_move(&draw_area, -draw_ctx->buf_area->x1, -draw_ctx->buf_area->y1);
-    _lv_draw_stm32_dma2d_blend_map(draw_ctx->buf, dest_stride, &draw_area, img->data, img->header.w,
-                                   &src_offset, img_dsc->opa, bitmapColorFormat, ignoreBitmapAlpha);
-    return LV_RES_OK;
 }
 
 /**********************

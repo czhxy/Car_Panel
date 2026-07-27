@@ -37,11 +37,11 @@ void lv_port_disp_init(void)
     /* 硬件已在 task_entry 中通过 BSP_SPI_LCD_Init() 完成初始化 */
     disp_init();
 
-    /* 双缓冲: 各 10 行 (240×10×2 = 4.8KB × 2 = 9.6KB, 静态分配在主 SRAM) */
+    /* 双缓冲: 各 40 行，静态分配在主 SRAM，可被 DMA2D 访问 */
     static lv_disp_draw_buf_t draw_buf_dsc;
-    static lv_color_t buf_1[MY_DISP_HOR_RES * 10];
-    static lv_color_t buf_2[MY_DISP_HOR_RES * 10];
-    lv_disp_draw_buf_init(&draw_buf_dsc, buf_1, buf_2, MY_DISP_HOR_RES * 10);
+    static lv_color_t buf_1[MY_DISP_HOR_RES * 40];
+    static lv_color_t buf_2[MY_DISP_HOR_RES * 40];
+    lv_disp_draw_buf_init(&draw_buf_dsc, buf_1, buf_2, MY_DISP_HOR_RES * 40);
 
     static lv_disp_drv_t disp_drv;
     lv_disp_drv_init(&disp_drv);

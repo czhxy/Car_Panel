@@ -1,15 +1,15 @@
 #include "task_lcd_demo.h"
+#include "task_dashboard_ui.h"
 #include "lvgl.h"
 #include "lv_port_disp.h"
 #include "lv_port_indev.h"
-#include "demos/widgets/lv_demo_widgets.h"
 #include "bsp_log.h"
 #include "FreeRTOS.h"
 #include "task.h"
 
 /* ============================================================
- * Task_LCD_Demo — LVGL 仪表盘演示任务
- * 初始化 LVGL 图形库并运行控件演示
+ * Task_LCD_Demo — LVGL 仪表盘 UI 任务
+ * 初始化 LVGL 图形库并运行仪表盘界面
  * 栈: 1024 字 = 4KB (LVGL 渲染开销)
  * 优先级: 3
  * ============================================================ */
@@ -31,12 +31,14 @@ void Task_LCD_Demo(void *pvParameters)
     lv_port_indev_init();
     LOG_I("[LVGL] Input device initialized\r\n");
 
-    /* 启动控件演示 */
-    lv_demo_widgets();
-    LOG_I("[LVGL] Widgets demo started\r\n");
+    /* 构建仪表盘 UI (替换原 lv_demo_widgets) */
+    Dashboard_UI_Init(lv_scr_act());
+    LOG_I("[LVGL] Dashboard UI started\r\n");
 
-    /* 主循环: 每 5ms 更新 LVGL tick 并处理渲染 */
+    /* 主循环: 每 5ms 更新 LVGL tick + 处理渲染
+     * 每 25ms 调用 Dashboard_Update 刷新动态元素 */
     TickType_t last_tick = xTaskGetTickCount();
+    uint32_t loop_cnt = 0;
     while (1)
     {
         TickType_t now = xTaskGetTickCount();
@@ -44,6 +46,13 @@ void Task_LCD_Demo(void *pvParameters)
         last_tick = now;
 
         lv_timer_handler();
+
+        /* 每 5 次循环 (25ms) 更新仪表盘数据 */
+        if ((loop_cnt % 5) == 0) {
+            Dashboard_Update();
+        }
+        loop_cnt++;
+
         vTaskDelay(pdMS_TO_TICKS(5));
     }
 }

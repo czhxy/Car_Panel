@@ -1,4 +1,5 @@
 #include "mod_comm_can.h"
+#include "mod_dashboard_data.h"
 #include "task_comm_can_protocol.h"
 #include "bsp_can.h"
 #include "bsp_key.h"
@@ -102,17 +103,70 @@ void ModCommCan_PrintRxFrame(const CanRxMsg *rx_msg)
 }
 
 /* ============================================================
- * ModCommCan_OnRxFrame — 弱符号接收回调
- * 默认行为：打印帧内容；应用层可通过重写接管
+ * ModCommCan_OnRxFrame — 强符号接收回调（替换弱符号默认实现）
+ *
+ * 解析动力域 ECU 上报帧：
+ * - 心跳帧 (mode_id=0x320): 更新 motor_online、error_code、status
+ * - 电机状态帧 (mode_id=0x110): 更新 rpm、odo_value、motor_status
  * ============================================================ */
-WEAK void ModCommCan_OnRxFrame(const CanRxMsg *rx_msg)
+void ModCommCan_OnRxFrame(const CanRxMsg *rx_msg)
 {
-    ModCommCan_PrintRxFrame(rx_msg);
+    if (rx_msg->IDE != CAN_ID_EXT) {
+        return;
+    }
 
-    /* 心跳帧特别标识一下，方便确认动力域->显示域链路通断 */
-    if ((rx_msg->IDE == CAN_ID_EXT) &&
-        (CAN_ID_GET_MODE(rx_msg->ExtId) == MODE_ID_HEARTBEAT)) {
-        LOG_I("[HB] << heartbeat from motorboard >>\r\n");
+    uint32_t ext_id = rx_msg->ExtId;
+    uint8_t  src    = CAN_ID_GET_SRC(ext_id);
+    uint16_t mode   = CAN_ID_GET_MODE(ext_id);
+
+    /* 仅处理来自动力域 (src=0x02) 的帧 */
+    if (src != CAN_ADDR_MOTORBOARD) {
+        return;
+    }
+
+    switch (mode) {
+    case MODE_ID_HEARTBEAT:
+    {
+        /* 心跳帧: [status, uptime_L, uptime_H, err_L, err_H, 0, 0, 0]
+         * 解析 error_code 并更新在线状态 */
+        uint16_t error_code = ((uint16_t)rx_msg->Data[4] << 8) | rx_msg->Data[3];
+
+        Dashboard_Data_Lock();
+        g_dash_state.error_code   = error_code;
+        g_dash_state.motor_online = true;
+        Dashboard_Data_Unlock();
+
+        LOG_D("[CAN] HB from motor: status=0x%02X error=0x%04X\r\n",
+              rx_msg->Data[0], error_code);
+        break;
+    }
+
+    case MODE_ID_STATUS_MOTOR:
+    {
+        /* 电机状态帧 (0x110): [rpm_L, rpm_H, status, odo_0, odo_1, odo_2, odo_3, 0]
+         * 待动力域正式实现后确认格式 */
+        uint16_t rpm     = ((uint16_t)rx_msg->Data[1] << 8) | rx_msg->Data[0];
+        uint8_t  status  = rx_msg->Data[2];
+        uint32_t odo     = ((uint32_t)rx_msg->Data[6] << 24) |
+                           ((uint32_t)rx_msg->Data[5] << 16) |
+                           ((uint32_t)rx_msg->Data[4] << 8)  |
+                            rx_msg->Data[3];
+
+        Dashboard_Data_Lock();
+        g_dash_state.rpm          = rpm;
+        g_dash_state.motor_status = status;
+        g_dash_state.odo_value    = odo;
+        g_dash_state.motor_online = true;
+        Dashboard_Data_Unlock();
+
+        LOG_D("[CAN] Motor status: rpm=%u status=0x%02X odo=%lu\r\n",
+              rpm, status, (unsigned long)odo);
+        break;
+    }
+
+    default:
+        /* 未识别的帧，忽略 */
+        break;
     }
 }
 

@@ -340,7 +340,7 @@
               <MiscControls></MiscControls>
               <Define>STM32F429_439xx,USE_STDPERIPH_DRIVER,LV_LVGL_H_INCLUDE_SIMPLE,LV_CONF_INCLUDE_SIMPLE</Define>
               <Undefine></Undefine>
-              <IncludePath>..\app;..\driver;..\firmware\cmsis\core;..\firmware\cmsis\device;..\firmware\driver\inc;..\components;..\third_lib\FreeRTOS;..\third_lib\FreeRTOS\inc;..\task;..\protocol;..\bootloader;..\third_lib\LVGL\lvgl;..\third_lib\LVGL\lvgl\examples\porting</IncludePath>
+              <IncludePath>..\app;..\driver;..\firmware\cmsis\core;..\firmware\cmsis\device;..\firmware\driver\inc;..\components;..\third_lib\FreeRTOS;..\third_lib\FreeRTOS\inc;..\task;..\protocol;..\bootloader;..\pic;..\third_lib\LVGL\lvgl;..\third_lib\LVGL\lvgl\examples\porting</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -543,6 +543,51 @@
               <FileName>task_lcd_demo.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\task\task_lcd_demo.c</FilePath>
+            </File>
+            <File>
+              <FileName>mod_dashboard_data.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\task\mod_dashboard_data.c</FilePath>
+            </File>
+            <File>
+              <FileName>mod_dashboard_data.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\task\mod_dashboard_data.h</FilePath>
+            </File>
+            <File>
+              <FileName>mod_dashboard_fault.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\task\mod_dashboard_fault.c</FilePath>
+            </File>
+            <File>
+              <FileName>mod_dashboard_fault.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\task\mod_dashboard_fault.h</FilePath>
+            </File>
+            <File>
+              <FileName>task_dashboard_ui.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\task\task_dashboard_ui.c</FilePath>
+            </File>
+            <File>
+              <FileName>task_dashboard_ui.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\task\task_dashboard_ui.h</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>pic</GroupName>
+          <Files>
+            <File>
+              <FileName>dashboard_images.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\pic\dashboard_images.c</FilePath>
+            </File>
+            <File>
+              <FileName>dashboard_images.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\pic\dashboard_images.h</FilePath>
             </File>
           </Files>
         </Group>
@@ -927,6 +972,11 @@
               <FileType>1</FileType>
               <FilePath>..\third_lib\LVGL\lvgl\src\draw\sw\lv_draw_sw_transform.c</FilePath>
             </File>
+            <File>
+              <FileName>lv_gpu_stm32_dma2d.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\third_lib\LVGL\lvgl\src\draw\stm32_dma2d\lv_gpu_stm32_dma2d.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
@@ -1081,6 +1131,11 @@
               <FileName>lv_font_montserrat_14.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\third_lib\LVGL\lvgl\src\font\lv_font_montserrat_14.c</FilePath>
+            </File>
+            <File>
+              <FileName>lv_font_montserrat_28.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\third_lib\LVGL\lvgl\src\font\lv_font_montserrat_28.c</FilePath>
             </File>
           </Files>
         </Group>
@@ -1693,7 +1748,7 @@
               <MiscControls></MiscControls>
               <Define>STM32F429_439xx,USE_STDPERIPH_DRIVER,APP_SLOT_B,LV_LVGL_H_INCLUDE_SIMPLE,LV_CONF_INCLUDE_SIMPLE</Define>
               <Undefine></Undefine>
-              <IncludePath>..\app;..\driver;..\firmware\cmsis\core;..\firmware\cmsis\device;..\firmware\driver\inc;..\components;..\third_lib\FreeRTOS;..\third_lib\FreeRTOS\inc;..\task;..\protocol;..\bootloader;..\third_lib\LVGL\lvgl;..\third_lib\LVGL\lvgl\examples\porting</IncludePath>
+              <IncludePath>..\app;..\driver;..\firmware\cmsis\core;..\firmware\cmsis\device;..\firmware\driver\inc;..\components;..\third_lib\FreeRTOS;..\third_lib\FreeRTOS\inc;..\task;..\protocol;..\bootloader;..\pic;..\third_lib\LVGL\lvgl;..\third_lib\LVGL\lvgl\examples\porting</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -1896,6 +1951,51 @@
               <FileName>task_lcd_demo.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\task\task_lcd_demo.c</FilePath>
+            </File>
+            <File>
+              <FileName>mod_dashboard_data.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\task\mod_dashboard_data.c</FilePath>
+            </File>
+            <File>
+              <FileName>mod_dashboard_data.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\task\mod_dashboard_data.h</FilePath>
+            </File>
+            <File>
+              <FileName>mod_dashboard_fault.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\task\mod_dashboard_fault.c</FilePath>
+            </File>
+            <File>
+              <FileName>mod_dashboard_fault.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\task\mod_dashboard_fault.h</FilePath>
+            </File>
+            <File>
+              <FileName>task_dashboard_ui.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\task\task_dashboard_ui.c</FilePath>
+            </File>
+            <File>
+              <FileName>task_dashboard_ui.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\task\task_dashboard_ui.h</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>pic</GroupName>
+          <Files>
+            <File>
+              <FileName>dashboard_images.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\pic\dashboard_images.c</FilePath>
+            </File>
+            <File>
+              <FileName>dashboard_images.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\pic\dashboard_images.h</FilePath>
             </File>
           </Files>
         </Group>
@@ -2280,6 +2380,11 @@
               <FileType>1</FileType>
               <FilePath>..\third_lib\LVGL\lvgl\src\draw\sw\lv_draw_sw_transform.c</FilePath>
             </File>
+            <File>
+              <FileName>lv_gpu_stm32_dma2d.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\third_lib\LVGL\lvgl\src\draw\stm32_dma2d\lv_gpu_stm32_dma2d.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
@@ -2434,6 +2539,11 @@
               <FileName>lv_font_montserrat_14.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\third_lib\LVGL\lvgl\src\font\lv_font_montserrat_14.c</FilePath>
+            </File>
+            <File>
+              <FileName>lv_font_montserrat_28.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\third_lib\LVGL\lvgl\src\font\lv_font_montserrat_28.c</FilePath>
             </File>
           </Files>
         </Group>

@@ -10,7 +10,7 @@
 |---|---|---|---|
 | Bootloader (YMODEM OTA) | 100% | `bootloader/` | YMODEM-1K + 真 AB 分区 + CRC32 校验 |
 | OTA 参数管理 | 100% | `bootloader/ota_params.c` | Sector 4，append-only 日志，1024 槽 × 64B，掉电安全 |
-| FreeRTOS 集成 | 100% | `third_lib/FreeRTOS` | v11.3.0，heap_4 @ CCM，7 任务运行 |
+| FreeRTOS 集成 | 100% | `third_lib/FreeRTOS` | v11.3.0，heap_4 @ CCM，8 任务运行 |
 | CAN 通信框架 | 100% | `task/mod_comm_can.c/h` | TX/RX 双 FreeRTOS 队列，ISR 接收，心跳，测试帧 |
 | CAN 协议层 | 90% | `task/task_comm_can_protocol.c/h`, `protocol/CAN_Protocol.h` | ID 编解码完成，电机控制帧周期发送，调试查询占位 |
 | 串口日志 | 100% | `app/bsp_log.h`, `driver/usart.c/h` | printf 重定向，`LOG_E/W/I/D` 宏，环形缓冲 RX |
@@ -19,53 +19,78 @@
 | UART 查询服务 | 100% | `task/task_query.c/h` | `0xAA 0x55` 协议，芯片信息/VTOR 自证槽位查询 |
 | SPI LCD 驱动 (ILI9341V) | **100%** | `app/bsp_spi_lcd.c/h` + `app/bsp_spi_lcd_font.h` | SPI5 SPL 4 线接口，240×320 RGB565，ILI9341 全初始化序列 |
 | I2C 触摸驱动 (FT6336G) | **100%** | `app/bsp_i2c_touch.c/h` | I2C1 SPL 400kHz，2 点触摸，ID 验证 |
-| GUI 绘图库 | **100%** | `task/mod_gui.c/h` | 点/线/圆/矩形/三角形/字符/图片绘制 |
-| LCD 演示与触摸测试 | **100%** | `task/mod_test.c/h` + `task/task_lcd_demo.c/h` | 10 项综合测试 + 触摸坐标验证 |
+| GUI 绘图库 | **100%** | `task/mod_gui.c/h` | 点/线/圆/矩形/三角形/字符/图片绘制（LVGL 接管后保留备用） |
+| LCD 演示与触摸测试 | **100%** | `task/mod_test.c/h` | 10 项综合测试 + 触摸坐标验证（LVGL 接管后保留备用） |
+| **LVGL 移植与 Demo** | **100%** | `third_lib/LVGL/` + `task/task_lcd_demo.c` | v8.3.11，DMA2D GPU 加速，双缓冲，Widgets Demo 跑通 |
 | 电机传感器驱动 | 5% | `driver/mod_motor.c/h` | 仅占位函数（返回 0.0f） |
-| LVGL 仪表盘 UI | 0% | `task/task_display.c`（待建） | 未创建 |
+| **LVGL 仪表盘 UI** | **90%** | `task/task_dashboard_ui.c/h` + `task/mod_dashboard_data.c/h` | 静态 UI 全貌构建完成，CAN 数据→UI 更新链路实现，25ms 刷新周期 |
 
 ---
 
-## 新建文件清单（本次 LCD 移植）
+## 新建文件清单
+
+### 本次新增 — 仪表盘 UI
 
 ```
-app/
-  bsp_spi_lcd.h          SPI5 + ILI9341 接口声明、引脚定义、颜色宏
-  bsp_spi_lcd.c          SPI5 SPL 初始化 + ILI9341 60+ 寄存器初始化序列
-  bsp_spi_lcd_font.h     ASCII 6x12/8x16 + 中文 16/24/32 字库点阵
-  bsp_i2c_touch.h        I2C1 + FT6336G 寄存器定义、触摸结构体
-  bsp_i2c_touch.c        I2C1 SPL 400kHz + FT6336G 驱动 + ID 验证
+tools/
+  bin_to_c_array.py       一次性地将 pic/*.bin → C 数组 + lv_img_dsc_t
+
+pic/
+  dashboard_images.h      7 张图片的 extern lv_img_dsc_t 声明
+  dashboard_images.c      7 张图片的 const uint8_t[] 像素数据 + 描述符
+                          约 60KB Flash（Top Bar 208×32, Frame 120×110,
+                          ODO 65×48, BATTERY 65×48, SOC 65×48,
+                          Turn Signals 208×20, mode 24×12）
+
 task/
-  mod_gui.h              GUI 绘图库接口
-  mod_gui.c              点/线/圆/矩形/三角/字符/图片 绘制实现
-  mod_test.h             测试函数声明
-  mod_test.c             10 项综合测试实现（含触摸测试）
-  mod_test_pic.h         40×40 QQ 图片取模数据
-  task_lcd_demo.h        演示任务声明
-  task_lcd_demo.c        循环演示任务（每项间隔 2s）
+  mod_dashboard_data.h    DashboardState 结构体 + DashboardCard 枚举 +
+                          FreeRTOS 互斥锁 API 声明
+  mod_dashboard_data.c    全局状态初始化、互斥锁创建、快照读取实现
+  mod_dashboard_fault.h   FaultCodeEntry 结构体 + FaultLevel 枚举 + 查询 API
+  mod_dashboard_fault.c   故障码→消息映射表（4 条初始映射，可扩展追加）
+  task_dashboard_ui.h     Dashboard_UI_Init() + Dashboard_Update() 声明
+  task_dashboard_ui.c     全部 UI 元素构建（~350 行） + 25ms 周期更新逻辑
 ```
 
----
+### 历史新增（上次）
 
-## LCD/TOUCH 引脚分配（零冲突）
-
-| 功能 | 引脚 | 外设 | 说明 |
-|------|------|------|------|
-| SPI5_SCK | PF7 | SPI5 | 空闲 |
-| SPI5_MISO | PF8 | SPI5 | 空闲 |
-| SPI5_MOSI | PF9 | SPI5 | 空闲 |
-| LCD_RS | PI8 | GPIO | 命令/数据选择 |
-| LCD_RST | PI9 | GPIO | 硬件复位 |
-| LCD_CS | PI10 | GPIO | 片选 |
-| LCD_BL | PD6 | GPIO | 背光控制（高亮） |
-| I2C1_SCL | PB6 | I2C1 | 触摸 I2C 时钟 |
-| I2C1_SDA | PB7 | I2C1 | 触摸 I2C 数据 |
-| CTP_INT | PB8 | GPIO | 触摸中断（输入上拉） |
-| CTP_RST | PB9 | GPIO | 触摸复位（推挽输出） |
+详见 git 记录。
 
 ---
 
-## 数据流（当前完整运行的路径）
+## 仪表盘 UI 布局 (240×320，深色底 #05080D)
+
+```
+y=7    Top Bar (208×32)           ← lv_img(img_top_bar)
+         └─ CAN LED (8×8 圆)       ← 小圆点叠放 (85,13)，在线=绿色闪烁，离线=红色常亮
+y=45   Divider                    ← lv_obj 208×1, rgba(0CCFF,0.08)
+y=49   Error Box (150×23)         ← LVGL 控件构建（动态红/绿色切换）
+         ├ 错误图标 7×7 圆角方块   ← 绿色=OK, 红色=FAULT
+         ├ 标题 "STATUS" + 消息    ← lv_label ×2
+         └ 错误码 "OK" / "E002"    ← lv_label
+y=72   Gauge (120×110, 居中)      ← 容器
+         ├ Frame 背景图            ← lv_img(img_frame, 120×110)
+         ├ RPM 弧形指示            ← lv_meter + lv_meter_add_arc (0–12000, 270°, 135°起点)
+         ├ RPM 数值 "6800"         ← lv_label, Montserrat 28
+         └ 单位 "RPM"              ← lv_label
+y=190  Bottom Cards (208×48)      ← flex row, gap 6
+         ├ ODO Card (65×48)        ← lv_img(img_odo) + lv_label("圈数")
+         ├ BATT Card (65×48)       ← lv_img(img_battery) + lv_label("78%")
+         └ SOC Card (65×48)        ← lv_img(img_soc) + lv_label("85%")
+              └ 选中卡片边框高亮    ← #00E5FF (选中) / 暗色 (未选中)
+y=244  Load Bar (208×28)          ← lv_slider (交互型 RPM 下发)
+         刻度: 0, 75, 150 RPM      ← lv_label
+         目标值: "126 RPM"         ← lv_label, 拖动后实时变化
+y=305  Turn Signals (208×20)      ← lv_img(img_turn_signals)
+         ├ 左箭头点击区 104×20     ← 透明 lv_obj (卡片左移)
+         └ 右箭头点击区 104×20     ← 透明 lv_obj (卡片右移)
+y=325  Warning Dots (208×16)      ← flex row, 6 个 8×8 圆点
+         ABS(黄)/ESC(橙)/引擎(红)/电池(绿)/远光(蓝)/车门(粉)
+         电池默认点亮(90%)，其余暗(20%)
+         引擎故障时 红色点亮
+```
+
+## CAN 数据流（当前完整运行的路径）
 
 ```
 ┌────────────────────────────────────────────────────────────┐
@@ -84,7 +109,13 @@ task/
 │    → CanProtocol_WheelCtlSend() → 10ms 限频电机控制帧        │
 │                                                            │
 │  Mod_Can_RxTask (prio 4):                                  │
-│    → xQueueReceive(RxQueue) → ModCommCan_OnRxFrame()        │
+│    → xQueueReceive(RxQueue)                                 │
+│    → ModCommCan_OnRxFrame() [强符号]                        │
+│       ├ 心跳帧 (0x320):    → g_dash_state.error_code        │
+│       │                      → g_dash_state.motor_online    │
+│       └ 电机状态 (0x110):  → g_dash_state.rpm               │
+│                            → g_dash_state.odo_value          │
+│                            → g_dash_state.motor_status       │
 │                                                            │
 │  CAN_Test_Task (prio 4):                                   │
 │    → 等待 xKey1Sem → Mod_Can_TxTest()                       │
@@ -95,16 +126,30 @@ task/
 │  UART_QUERY (prio 2):                                      │
 │    → 状态机解析 0xAA 0x55 协议 → 查询应答                     │
 │                                                            │
-│  LCD_DEMO (prio 3):                                        │
-│    → 循环运行测试项 → 触摸坐标实时显示                        │
-│    → Touch_Test() 8s 触摸验证 → log 输出结果                 │
+│  LCD_DEMO (prio 3, 5ms):                                   │
+│    → lv_tick_inc() + lv_timer_handler()                     │
+│    → Dashboard_UI_Init(scr) 启动时一次性构建                  │
+│    → Dashboard_Update() 每 25ms:                            │
+│       Dashboard_Data_GetSnapshot() → 读共享状态              │
+│       ├ RPM 弧线/数值刷新                                   │
+│       ├ 错误框颜色切换 (红/绿)                               │
+│       ├ CAN 指示灯闪烁 (500ms 周期)                          │
+│       ├ 心跳超时检测 (1.5s)                                 │
+│       ├ 卡片选择器高亮                                      │
+│       └ 警示灯状态更新                                      │
 │                                                            │
 │  Heartbeat_Task (prio 1, 500ms):                            │
 │    → LED 翻转 + Can_Heartbeat() → Mod_Can_TxEvent()         │
 └────────────────────────────────────────────────────────────┘
-```
 
----
+┌────────────────────────────────────────────────────────────┐
+│ TX 方向 (显示域 → 动力域):                                   │
+│   Load Bar 交互 → g_dash_state.rpm_target 变化              │
+│     → CanProto_SendFrame() → CAN TX 队列                    │
+│     → CAN 总线 → 动力域 ECU 接收                            │
+│   格式: [speed_L, speed_H, 0, 0, 0, 0, 0, 3]               │
+└────────────────────────────────────────────────────────────┘
+```
 
 ## Task_Entry_All 初始化顺序
 
@@ -116,6 +161,8 @@ Mod_Can_Init()          ← 先创建 CAN 队列，再使能硬件中断
 BSP_CAN_Init()
 BSP_SPI_LCD_Init()      ← SPI5 + ILI9341 (vTaskDelay 复位时序)
 BSP_I2C_Touch_Init()    ← I2C1 + FT6336G (ID 验证)
+                          LVGL 由 LCD_DEMO 任务独立初始化（lv_init + port_init +
+                          Dashboard_UI_Init）
 
 ---- 创建 FreeRTOS 任务 ----
 CAN_TX (512, prio 4)
@@ -124,8 +171,123 @@ CAN_TEST (256, prio 4)
 KEY_SCAN (256, prio 2)
 HEARTBEAT (512, prio 1)
 UART_QUERY (256, prio 2)
-LCD_DEMO (512, prio 3)
+LCD_DEMO (1024, prio 3)  ← 栈 1024 字 = 4KB，LVGL 渲染开销
 ```
+
+## 仪表盘线程安全设计
+
+```
+CAN_RX Task (prio 4)             LCD_DEMO Task (prio 3)
+   │                                  │
+   ├─ 写入 g_dash_state              ├─ 读取 g_dash_state
+   │  Dashboard_Data_Lock()          │  Dashboard_Data_Lock()
+   │  ...修改字段...                  │  memcpy → 本地快照
+   │  Dashboard_Data_Unlock()        │  Dashboard_Data_Unlock()
+   │                                  │  用快照更新 UI (不加锁)
+   │                                  │
+   └── FreeRTOS Mutex ────────────────┘
+```
+
+- 加锁时间极短（仅拷贝结构体/写几个字段，不阻塞 LVGL 渲染）
+- UI 更新使用本地快照，不在锁内操作 LVGL 对象
+- 心跳超时检测在 `Dashboard_Update()` 中检查（1.5s 无心跳 → `motor_online = false`）
+
+---
+
+## 故障码映射系统
+
+| 故障码 | 消息 | 级别 | 说明 |
+|---|---|---|---|
+| `0x0000` | "ALL SYSTEMS NORMAL" | NONE | 无故障 |
+| `0x0001` | "CAN TIMEOUT" | ERROR | CAN 心跳超时 |
+| `0x0002` | "MOTOR STALL" | ERROR | 电机堵转 |
+| `0x0004` | "ENCODER LOSS" | ERROR | 编码器丢失 |
+
+扩展方法：在 `mod_dashboard_fault.c` 的 `s_fault_table[]` 数组中追加一行：
+```c
+{ 0x0008, "OVERCURRENT", FAULT_ERROR },
+```
+
+## 错误框颜色切换
+
+| 状态 | 背景 | 边框 | 图标 | 文字 | 错误码 |
+|---|---|---|---|---|---|
+| 正常(无故障) | `#020A04` | `#33CC4D` 12% | `#33CC4D` | `#33CC4D` 80% | `"OK"` `#33CC4D` |
+| 故障 | `#0A0202` | `#F54236` 12% | `#F54236` | `#F54236` 80% | `"E002"` `#2A2A2A` |
+
+---
+
+## 图片资源使用决策
+
+| 图片 | 使用方式 | 原因 |
+|---|---|---|
+| Top Bar.bin | `lv_img` 背景 | SPORT/档位已固化在图中 |
+| Frame.bin | `lv_img` 背景 | 装饰性表盘圆环 |
+| ODO/BATTERY/SOC.bin | `lv_img` 背景 | 卡片底纹，数值用 `lv_label` 叠放 |
+| Turn Signals.bin | `lv_img` 背景 | 箭头底图，点击区用透明 `lv_obj` 覆盖 |
+| mode.bin | `lv_img`（预留） | 档位 "D" 指示器 24×12 |
+| Error Box.bin | **不使用** | 改为 LVGL 控件构建（需动态变红/绿色） |
+| load-bg/fill/label-*.bin | **不使用** | 改为 `lv_slider` + `lv_label` |
+
+---
+
+## LVGL 配置要点
+
+### lv_conf.h 关键配置
+
+| 配置项 | 值 | 说明 |
+|---|---|---|
+| `LV_COLOR_DEPTH` | 16 | RGB565，匹配 ILI9341 |
+| `LV_COLOR_16_SWAP` | 0 | 不交换字节（SPI MSB 先发，格式正确） |
+| `LV_MEM_SIZE` | 48KB | LVGL 内存池，位于主 SRAM (.bss) |
+| `LV_TICK_CUSTOM` | 0 | 手动在任务中调用 `lv_tick_inc()` |
+| `LV_USE_GPU_STM32_DMA2D` | 1 | DMA2D 硬件加速 |
+| `LV_GPU_DMA2D_CMSIS_INCLUDE` | `"stm32f4xx.h"` | DMA2D 驱动的 CMSIS 头文件 |
+| `LV_FONT_MONTSERRAT_14` | 1 | 默认字体 |
+| `LV_FONT_MONTSERRAT_28` | **1** | 本次新增：RPM 大数字显示 |
+| `LV_FONT_DEFAULT` | `&lv_font_montserrat_14` | 默认字体 |
+| `LV_USE_DEMO_WIDGETS` | 1 | Widgets Demo（保留但不再调用） |
+
+### 显示缓冲（lv_port_disp.c）
+
+- 双缓冲：2 × 240 × 40 = 19.2KB × 2 = **38.4KB**
+- 静态数组，落在主 SRAM (`.bss`)，DMA2D 可访问
+- 40 行缓冲为 DMA2D 效率优化（DMA2D block 大小不小于行高时效率最高）
+
+### SRAM 使用估算
+
+| 用途 | 大小 |
+|---|---|
+| LVGL 内存池 | 48KB |
+| 双缓冲 | 38.4KB |
+| **合计 LVGL** | **~86KB** |
+| 主 SRAM 总量 | 128KB |
+| 剩余给 FreeRTOS + 栈 + CAN 队列 | ~42KB |
+
+### Keil 工程 LVGL 分组（118 文件，12 分组）
+
+| 分组 | 文件数 | 变更 | 说明 |
+|---|---|---|---|
+| `lvgl_core` | 15 | — | LVGL 核心 |
+| `lvgl_draw` | 26 | — | 绘图（含 sw 软件渲染 + stm32_dma2d） |
+| `lvgl_extra` | 25 | — | 扩展控件、布局、主题 |
+| `lvgl_font` | **5** | +1 | Montserrat 14 + **28** 字体 |
+| `lvgl_hal` | 3 | — | 硬件抽象层 |
+| `lvgl_misc` | 22 | — | 杂项工具箱 |
+| `lvgl_widgets` | 15 | — | 基础控件 |
+| `lvgl_porting` | 2 | — | 本项目移植文件 |
+| `lvgl_config` | 2 | — | lv_conf.h + lvgl.h（FileType=5，不编译） |
+| `lvgl_demo_widgets` | 4 | — | Widgets Demo + 图片资源（保留不调用） |
+| `lvgl_app` | 0 | — | 预留 |
+| `task` | **+6** | +6 | mod_dashboard_data/fault + task_dashboard_ui |
+| `pic` | **新增** | +2 | dashboard_images.c/h |
+
+### DMA2D 注意事项
+
+- DMA2D 只能访问主 SRAM (`0x20000000`) 和外设总线，**不能访问 CCM** (`0x10000000`)
+- LVGL 的绘制缓冲、`lv_mem` 内存池均为静态分配（`.bss`），自动落在主 SRAM，DMA2D 可直接操作
+- 不要在 DMA2D 操作中使用 `pvPortMalloc()` 返回的指针（FreeRTOS 堆在 CCM）
+- **图片在 Flash (.rodata)**：LVGL 逐字节读入 SRAM 缓冲后再 DMA2D 绘制（不会直接从 Flash DMA）
 
 ---
 
@@ -135,17 +297,25 @@ LCD_DEMO (512, prio 3)
 
 2. **触摸 I2C 用硬件 SPL**：I2C1 400kHz Fast Mode，替代原 bit-bang GPIO 方式；复位后验证 4 个芯片 ID（0xA8=0x11, 0x9F=0x26, 0xA3=0x64）
 
-3. **LCD_Clear 用寄存器直接写入**：绕过 `SPI_WriteByte()` 函数调用开销，直接用 `SPI5->DR` 写入并轮询标志位
+3. **LCD_Clear 用寄存器直接写入**：绕过 `SPI_WriteByte()` 函数调用开销，直接用 `SPI5->DR` 写入并轮询标志位。LVGL 的 `disp_flush()` 也采用相同高性能方式
 
-4. **中文字库以占位符编译**：原始 FONT.H 中的 GBK 编码字符与 ARMCC V5 不兼容，字库索引替换为 `"__"` 占位（中文测试页未使用实际中文字符）
+4. **LVGL 移植**：v8.3.11，双缓冲 240×40 行（19.2KB × 2），DMA2D GPU 加速，Task_LCD_Demo 每 5ms 调用 `lv_tick_inc()` + `lv_timer_handler()`，使用 `xTaskGetTickCount()` 跟踪时间差
 
-5. **FreeRTOS 队列 vs 环形队列**：TX/RX 使用 FreeRTOS 队列（线程安全、挂起等待），`components/my_queue.c` 为备用环形队列（当前未被 App 使用）
+5. **DMA2D Chrom-ART 加速**：`LV_USE_GPU_STM32_DMA2D=1`，`LV_GPU_DMA2D_CMSIS_INCLUDE="stm32f4xx.h"`。DMA2D 负责颜色填充、混合、复制操作，大幅降低 CPU 占用
 
-6. **CAN TX 邮箱保护**：`ModCommCan_Tx()` 邮箱满时用 `xQueueSendToFront` 回灌队首后 break（不丢数据，等待下次出队）
+6. **中文字库以占位符编译**：原始 FONT.H 中的 GBK 编码字符与 ARMCC V5 不兼容，字库索引替换为 `"__"` 占位（中文测试页未使用实际中文字符）
 
-7. **弱符号回调**：`ModCommCan_OnRxFrame()` 为 `__weak` 弱符号，应用层可定义同名强符号覆盖默认行为
+7. **FreeRTOS 队列 vs 环形队列**：TX/RX 使用 FreeRTOS 队列（线程安全、挂起等待），`components/my_queue.c` 为备用环形队列（当前未被 App 使用）
 
-8. **CAN 滤波器全通**：掩码=0，接收总线所有 29-bit 扩展帧，后续可按源地址滤波器细化
+8. **CAN TX 邮箱保护**：`ModCommCan_Tx()` 邮箱满时用 `xQueueSendToFront` 回灌队首后 break（不丢数据，等待下次出队）
+
+9. **ModCommCan_OnRxFrame 强符号**：原弱符号 `__weak` 已替换为强符号实现，直接解析心跳帧(0x320)和电机状态帧(0x110)写入 `g_dash_state`，不再需要应用层额外覆盖
+
+10. **CAN 滤波器全通**：掩码=0，接收总线所有 29-bit 扩展帧，在 `ModCommCan_OnRxFrame()` 中按 `src==CAN_ADDR_MOTORBOARD` 过滤
+
+11. **lv_conf.h include 链**：通过 `LV_CONF_INCLUDE_SIMPLE` 宏使 `lv_conf_internal.h` 走 `#include "lv_conf.h"` 路径，而非相对路径 `../../lv_conf.h`。同理 `LV_LVGL_H_INCLUDE_SIMPLE` 控制 LVGL 头文件方式
+
+12. **仪表盘线程安全**：CAN RX (prio 4) 写入 g_dash_state，LCD_DEMO (prio 3) 读取，通过 FreeRTOS Mutex 保护。UI 更新用 `Dashboard_Data_GetSnapshot()` 获取本地快照后脱离锁操作
 
 ---
 
@@ -153,40 +323,46 @@ LCD_DEMO (512, prio 3)
 
 - **App 工程**：`mdk/app.uvprojx`，双 Target（stm32f429 / stm32f429_b），armcc V5.06, C99
 - **Bootloader 工程**：`mdk/boot.uvprojx`，独立编译
-- **新增 SPL 源文件**：`stm32f4xx_spi.c`、`stm32f4xx_i2c.c` 已加入 firmware/driver 组
+- **LVGL 源文件**：118 个 `.c` 文件通过 12 个 Keil 分组管理（新增加 lv_font_montserrat_28.c）
+- **本工程新增源文件**：`dashboard_images.c`、`mod_dashboard_data.c`、`mod_dashboard_fault.c`、`task_dashboard_ui.c`
+- **Keil 编译器 Define**：`STM32F429_439xx,USE_STDPERIPH_DRIVER,LV_LVGL_H_INCLUDE_SIMPLE,LV_CONF_INCLUDE_SIMPLE`（B 槽额外 `APP_SLOT_B`）
+- **Include Paths**：新增 `..\pic` 路径（包含 `..\bootloader;..\pic;..\third_lib\LVGL\lvgl;..\third_lib\LVGL\lvgl\examples\porting` 等）
 - App A 槽 → 0x08020000，App B 槽 → 0x08080000
 
 ---
 
 ## 下一步待做工作（按优先级）
 
-### P1 — LVGL 仪表盘 UI（`task/task_display.c`）
+### P1 — 编译验证与调试
 
-依赖 P0 LCD/触摸驱动已完成：
+- [ ] Keil 编译 0 error 0 warning 验证
+- [ ] 烧录测试：LCD 显示仪表盘全貌
+- [ ] 验证 CAN LED 闪烁逻辑（无真实 CAN 数据时用 g_dash_state 手动注入测试值）
+- [ ] 验证 Load Bar 交互 → CAN TX 帧发送
 
-- LVGL v8.x 移植：双缓冲（2×240×30×2 = 28.8KB 主 SRAM）、SPI flush 回调、FT6336G indev 回调
-- 仪表盘界面渲染（速度表盘、方向指示灯、电量/油量等）
-- 创建 LVGL 渲染任务（单独 FreeRTOS 任务，5ms 周期）
-- 数据驱动：将 CAN 接收到的电机状态映射到 LVGL 控件
+### P2 — 动力域 CAN 协议帧补齐
 
-### P2 — 电机传感器真实数据接入
+当前 `MOD_ID_STATUS_MOTOR(0x110)` 帧格式为显示域预设，需要对齐动力域实现：
+- 确认动力域上报的电机状态帧格式（rpm、odo、status 字段）
+- 心跳帧格式已定义，待动力域开始发送后联调
+
+### P3 — 电机传感器真实数据接入
 
 将 `driver/mod_motor.c` 的占位函数替换为实际实现：
 - 当前 `Mod_Motor_Get_Speed()` 和 `Mod_Motor_Angle()` 均硬编码返回 0.0f
 - 需要对接真实传感器数据源（通过 CAN 从动力域获取后写入）
-
-### P3 — 动力域 CAN 协议帧补齐
-
-当前向动力域发送的电机控制帧数据字段为 0（因为传感器返回 0.0f），需要：
-- 实现有意义的电机目标转速/电流设置
-- 接收和解析动力域上报的电机状态帧、心跳帧
-- 在 `ModCommCan_OnRxFrame()` 强符号实现中处理
 
 ### P4 — CAN 滤波器细化（`app/bsp_can.c`）
 
 当前全通（掩码=0），需要按源地址过滤：
 - 只接收来自 `CAN_ADDR_MOTORBOARD` (0x02) 的帧
 - 减少中断负载
+
+### P5 — 栈深度监控
+
+LVGL 嵌套渲染可能较深，当前 LCD_DEMO 栈为 1024 字 (4KB)：
+- 如果出现栈溢出，扩展到 2048 字 (8KB)
+- 可用 FreeRTOS `uxTaskGetStackHighWaterMark()` 监控
 
 ---
 
@@ -203,3 +379,7 @@ LCD_DEMO (512, prio 3)
 5. **触摸 ID 验证**：`FT6336_Init()` 需验证 VENDOR(0xA8=0x11)、MID(0x9F=0x26)、HIGH(0xA3=0x64)，任一失败返回 1
 
 6. **AB 分区调试**：编译 B 槽 Target 时，如果要将 B 镜像烧入 A 槽地址调试，需临时切换 scatter 起始地址
+
+7. **仪表盘图片数据在 Flash**：`dashboard_images.c` 约 60KB const 数据位于 .rodata/Flash，LVGL 逐字节读入 SRAM 后通过 DMA2D 渲染
+
+8. **mode.bin 图片**：已转换为 24×12 像素数据，但在 `Dashboard_UI_Init()` 中未放置到 UI（计划中的档位 "D" 指示器，Top Bar 已固化此内容）
