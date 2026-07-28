@@ -11,10 +11,11 @@ import sys
 # 图片尺寸（从 Figma 设计稿已知，单位：像素）
 IMAGE_DEFS = {
     "Top Bar":       (208, 32),
-    "Frame":         (120, 110),
-    "ODO":           (65, 48),
-    "BATTERY":       (65, 48),
-    "SOC":           (65, 48),
+    "arc-bg":        (99, 99),
+    "arc-fill":      (99, 99),
+    "can-dot_green": (6, 6),
+    "can-dot_red":   (6, 6),
+    "can-label":     (17, 6),
     "Turn Signals":  (208, 20),
     "mode":          (24, 12),   # 288 像素，24×12 = 288
 }
@@ -180,12 +181,12 @@ def main():
     # 写入文件
     h_path = os.path.join(pic_dir, "dashboard_images.h")
     with open(h_path, "w", encoding="utf-8", newline="\n") as f:
-        f.write("\n".join(h_lines))
+        f.write("\n".join(h_lines).rstrip("\n") + "\n")
     print(f"\n[OK] 已生成 {h_path}")
 
     c_path = os.path.join(pic_dir, "dashboard_images.c")
     with open(c_path, "w", encoding="utf-8", newline="\n") as f:
-        f.write("\n".join(c_lines))
+        f.write("\n".join(c_lines).rstrip("\n") + "\n")
     print(f"[OK] 已生成 {c_path}")
 
     print("\n===== 转换完成 =====")

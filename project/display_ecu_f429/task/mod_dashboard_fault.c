@@ -1,6 +1,7 @@
 /* mod_dashboard_fault.c — 故障码映射表实现 */
 
 #include "mod_dashboard_fault.h"
+#include <stddef.h>
 
 /* ---- 故障码映射表 ---- */
 static const FaultCodeEntry s_fault_table[] = {

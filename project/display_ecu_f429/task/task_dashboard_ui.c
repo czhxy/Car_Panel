@@ -43,15 +43,7 @@
  * 静态 UI 引用（供 Dashboard_Update 访问）
  * ============================================================ */
 static lv_obj_t *s_can_led      = NULL;
-static lv_obj_t *s_error_icon   = NULL;
-static lv_obj_t *s_error_box    = NULL;
-static lv_obj_t *s_error_label  = NULL;
-static lv_obj_t *s_error_code   = NULL;
-static lv_obj_t *s_error_title  = NULL;
-static lv_meter_indicator_t *s_rpm_arc = NULL;
 static lv_obj_t *s_rpm_label    = NULL;
-static lv_meter_scale_t *s_rpm_scale = NULL;
-static lv_obj_t *s_meter        = NULL;
 static lv_obj_t *s_card_frames[DASH_CARD_COUNT] = {NULL};
 static lv_obj_t *s_card_labels[DASH_CARD_COUNT] = {NULL};
 static lv_obj_t *s_load_slider  = NULL;
@@ -60,19 +52,31 @@ static lv_obj_t *s_warning_dots[6] = {NULL};
 
 /* ---- 心跳超时检测 ---- */
 #define HEARTBEAT_TIMEOUT_MS  1500
-static TickType_t s_last_hb_tick = 0;
 
 /* ---- 卡片颜色常量 ---- */
 static const lv_color_t s_warning_colors[6] = {
-    COLOR_ABS, COLOR_ESC, COLOR_ENGINE,
-    COLOR_BATT_GREEN, COLOR_HIGHBEAM, COLOR_DOOR
+    LV_COLOR_MAKE(0xFF, 0xEB, 0x3B),
+    LV_COLOR_MAKE(0xFF, 0x99, 0x00),
+    LV_COLOR_MAKE(0xF4, 0x43, 0x36),
+    LV_COLOR_MAKE(0x4C, 0xAF, 0x50),
+    LV_COLOR_MAKE(0x21, 0x96, 0xF3),
+    LV_COLOR_MAKE(0xE9, 0x1E, 0x63)
 };
+
+#if 0 /* 暂时隐藏错误码区域，保留代码便于后续恢复 */
+static lv_obj_t *s_error_icon   = NULL;
+static lv_obj_t *s_error_box    = NULL;
+static lv_obj_t *s_error_label  = NULL;
+static lv_obj_t *s_error_code   = NULL;
+static lv_obj_t *s_error_title  = NULL;
 
 /* ---- 辅助：设置错误框颜色 ---- */
 static void set_error_box_style(bool is_fault, uint16_t error_code)
 {
     lv_color_t bg, border, icon_color, text_color, code_color;
     const char *code_str;
+    const char *message = Dashboard_Fault_Lookup(error_code, (FaultLevel *)0);
+    char code_buf[8];
 
     if (is_fault) {
         bg         = lv_color_hex(0x0A0202);  /* rgba(245,66,54,0.04) 近似 */
@@ -80,7 +84,8 @@ static void set_error_box_style(bool is_fault, uint16_t error_code)
         icon_color = COLOR_ERROR_RED;
         text_color = COLOR_ERROR_RED;
         code_color = COLOR_WHITE_LOW;
-        code_str   = "E002";
+        snprintf(code_buf, sizeof(code_buf), "E%03X", (unsigned int)error_code);
+        code_str   = code_buf;
     } else {
         bg         = lv_color_hex(0x020A04);  /* rgba(51,204,77,0.04) 近似 */
         border     = COLOR_OK_GREEN;
@@ -98,8 +103,10 @@ static void set_error_box_style(bool is_fault, uint16_t error_code)
     lv_obj_set_style_text_color(s_error_label, text_color, 0);
     lv_obj_set_style_text_color(s_error_code, code_color, 0);
 
+    lv_label_set_text(s_error_label, message);
     lv_label_set_text(s_error_code, code_str);
 }
+#endif
 
 /* ============================================================
  * 事件回调
@@ -140,8 +147,12 @@ static void on_turn_left(lv_event_t *e)
 {
     (void)e;
     Dashboard_Data_Lock();
-    g_dash_state.selected_card =
-        (g_dash_state.selected_card + DASH_CARD_COUNT - 1) % DASH_CARD_COUNT;
+    {
+        unsigned int selected = (unsigned int)g_dash_state.selected_card;
+        selected = (selected + (unsigned int)DASH_CARD_COUNT - 1U) %
+                   (unsigned int)DASH_CARD_COUNT;
+        g_dash_state.selected_card = (DashboardCard)selected;
+    }
     Dashboard_Data_Unlock();
 }
 
@@ -149,8 +160,11 @@ static void on_turn_left(lv_event_t *e)
 static void on_turn_right(lv_event_t *e)
 {
     Dashboard_Data_Lock();
-    g_dash_state.selected_card =
-        (g_dash_state.selected_card + 1) % DASH_CARD_COUNT;
+    {
+        unsigned int selected = (unsigned int)g_dash_state.selected_card;
+        selected = (selected + 1U) % (unsigned int)DASH_CARD_COUNT;
+        g_dash_state.selected_card = (DashboardCard)selected;
+    }
     Dashboard_Data_Unlock();
     (void)e;
 }
@@ -213,14 +227,23 @@ void Dashboard_UI_Init(lv_obj_t *scr)
     lv_img_set_src(top_bar, &img_top_bar);
     lv_obj_align(top_bar, LV_ALIGN_TOP_MID, 0, 7);
 
-    /* CAN 指示灯 (小圆点, 叠在 CAN 位置 (85,13) 绝对坐标) */
-    s_can_led = lv_obj_create(scr);
-    lv_obj_set_size(s_can_led, 8, 8);
-    lv_obj_set_pos(s_can_led, 85, 13);
-    lv_obj_set_style_bg_color(s_can_led, COLOR_ERROR_RED, 0);  /* 初始离线=红色 */
-    lv_obj_set_style_bg_opa(s_can_led, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(s_can_led, 0, 0);
-    lv_obj_set_style_radius(s_can_led, LV_RADIUS_CIRCLE, 0);
+    /* 替换 Top Bar 内置的静态 CAN 区域，避免出现两个状态点 */
+    lv_obj_t *can_cover = lv_obj_create(scr);
+    /* Top Bar.bin 内置 CAN 区域约为 x=105..131、y=20..26。 */
+    lv_obj_set_size(can_cover, 30, 10);
+    lv_obj_set_pos(can_cover, 103, 18);
+    lv_obj_set_style_bg_color(can_cover, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(can_cover, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(can_cover, 0, 0);
+    lv_obj_set_style_radius(can_cover, 0, 0);
+
+    s_can_led = lv_img_create(scr);
+    lv_img_set_src(s_can_led, &img_can_dot_red);
+    lv_obj_set_pos(s_can_led, 105, 20);
+
+    lv_obj_t *can_label = lv_img_create(scr);
+    lv_img_set_src(can_label, &img_can_label);
+    lv_obj_set_pos(can_label, 115, 20);
 
     /* ========================================================
      * 2. Divider 分割线 (208×1, y=45)
@@ -236,6 +259,7 @@ void Dashboard_UI_Init(lv_obj_t *scr)
     /* ========================================================
      * 3. Error Box (150×23, 居中, y=49)
      * ======================================================== */
+#if 0 /* 暂时隐藏错误码区域 */
     s_error_box = lv_obj_create(scr);
     lv_obj_set_size(s_error_box, 150, 23);
     lv_obj_align(s_error_box, LV_ALIGN_TOP_MID, 0, 49);
@@ -243,7 +267,7 @@ void Dashboard_UI_Init(lv_obj_t *scr)
     lv_obj_set_style_bg_opa(s_error_box, LV_OPA_COVER, 0);
     lv_obj_set_style_border_color(s_error_box, COLOR_OK_GREEN, 0);
     lv_obj_set_style_border_width(s_error_box, 1, 0);
-    lv_obj_set_style_border_opa(s_error_box, LV_OPA_12, 0);
+    lv_obj_set_style_border_opa(s_error_box, LV_OPA_10, 0);
     lv_obj_set_style_radius(s_error_box, 2, 0);
     lv_obj_set_style_pad_all(s_error_box, 4, 0);
 
@@ -275,6 +299,7 @@ void Dashboard_UI_Init(lv_obj_t *scr)
     lv_obj_set_style_text_color(s_error_code, COLOR_OK_GREEN, 0);
     lv_label_set_text(s_error_code, "OK");
     lv_obj_align(s_error_code, LV_ALIGN_RIGHT_MID, -4, 0);
+#endif
 
     /* ========================================================
      * 4. Gauge 表盘 (120×110, 居中, y=72)
@@ -286,31 +311,20 @@ void Dashboard_UI_Init(lv_obj_t *scr)
     lv_obj_set_style_border_width(gauge_cont, 0, 0);
     lv_obj_set_style_pad_all(gauge_cont, 0, 0);
 
-    /* Frame 背景图片 */
-    lv_obj_t *frame_img = lv_img_create(gauge_cont);
-    lv_img_set_src(frame_img, &img_frame);
-    lv_obj_align(frame_img, LV_ALIGN_CENTER, 0, 0);
+    /* 使用不带数字的圆弧底图和填充图，数字由 LVGL 实时显示 */
+    lv_obj_t *arc_bg_img = lv_img_create(gauge_cont);
+    lv_img_set_src(arc_bg_img, &img_arc_bg);
+    lv_obj_align(arc_bg_img, LV_ALIGN_CENTER, 0, 0);
 
-    /* RPM 弧形指示 (lv_meter) */
-    s_meter = lv_meter_create(gauge_cont);
-    lv_obj_set_size(s_meter, 110, 110);
-    lv_obj_align(s_meter, LV_ALIGN_CENTER, 0, 0);
-    lv_obj_set_style_bg_opa(s_meter, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(s_meter, 0, 0);
-
-    s_rpm_scale = lv_meter_add_scale(s_meter);
-    lv_meter_set_scale_ticks(s_meter, s_rpm_scale, 0, 0, 0, lv_color_black());
-    lv_meter_set_scale_range(s_meter, s_rpm_scale, 0, 12000, 270, 135);
-
-    s_rpm_arc = lv_meter_add_arc(s_meter, s_rpm_scale, 3, COLOR_ACCENT, 0);
-    lv_meter_set_indicator_start_value(s_meter, s_rpm_arc, 0);
-    lv_meter_set_indicator_end_value(s_meter, s_rpm_arc, 6800);
+    lv_obj_t *arc_fill_img = lv_img_create(gauge_cont);
+    lv_img_set_src(arc_fill_img, &img_arc_fill);
+    lv_obj_align(arc_fill_img, LV_ALIGN_CENTER, 0, 0);
 
     /* RPM 数值 ("6800", Montserrat 28) */
     s_rpm_label = lv_label_create(gauge_cont);
     lv_obj_set_style_text_color(s_rpm_label, lv_color_white(), 0);
     lv_obj_set_style_text_font(s_rpm_label, &lv_font_montserrat_28, 0);
-    lv_label_set_text(s_rpm_label, "6800");
+    lv_label_set_text(s_rpm_label, "0");
     lv_obj_align(s_rpm_label, LV_ALIGN_CENTER, 0, -4);
 
     /* RPM 单位 ("RPM") */
@@ -332,10 +346,7 @@ void Dashboard_UI_Init(lv_obj_t *scr)
     lv_obj_set_flex_align(cards_cont, LV_FLEX_ALIGN_SPACE_EVENLY,
                           LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
-    /* ODO Card */
-    static const lv_img_dsc_t *card_imgs[DASH_CARD_COUNT] = {
-        &img_odo, &img_battery, &img_soc
-    };
+    /* ODO/BATT/SOC 图标按当前需求隐藏，不创建图片对象。 */
 
     unsigned int i;
     for (i = 0; i < DASH_CARD_COUNT; i++) {
@@ -350,11 +361,6 @@ void Dashboard_UI_Init(lv_obj_t *scr)
         lv_obj_set_style_radius(s_card_frames[i], 2, 0);
         lv_obj_set_style_pad_all(s_card_frames[i], 0, 0);
 
-        /* 卡片背景图 */
-        lv_obj_t *img = lv_img_create(s_card_frames[i]);
-        lv_img_set_src(img, card_imgs[i]);
-        lv_obj_align(img, LV_ALIGN_CENTER, 0, 0);
-
         /* 卡片数值标签 */
         s_card_labels[i] = lv_label_create(s_card_frames[i]);
         lv_obj_set_style_text_color(s_card_labels[i], lv_color_white(), 0);
@@ -364,12 +370,12 @@ void Dashboard_UI_Init(lv_obj_t *scr)
     }
 
     /* ========================================================
-     * 6. Load Bar (lv_slider, 交互型 RPM 下发, 208×28, y=244)
+     * 6. Load Bar (刻度 y=240, 滑块 208×20, y=270)
      * ======================================================== */
     /* 刻度标签容器 */
     lv_obj_t *tick_cont = lv_obj_create(scr);
-    lv_obj_set_size(tick_cont, 208, 14);
-    lv_obj_align(tick_cont, LV_ALIGN_TOP_MID, 0, 244);
+    lv_obj_set_size(tick_cont, 208, 12);
+    lv_obj_align(tick_cont, LV_ALIGN_TOP_MID, 0, 240);
     lv_obj_set_style_bg_opa(tick_cont, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(tick_cont, 0, 0);
     lv_obj_set_style_pad_all(tick_cont, 0, 0);
@@ -381,24 +387,24 @@ void Dashboard_UI_Init(lv_obj_t *scr)
 
     lv_obj_t *tick75 = lv_label_create(tick_cont);
     lv_obj_set_style_text_color(tick75, COLOR_TEXT_DIM, 0);
-    lv_label_set_text(tick75, "75");
+    lv_label_set_text(tick75, "50");
     lv_obj_align(tick75, LV_ALIGN_CENTER, 0, 0);
 
     lv_obj_t *tick150 = lv_label_create(tick_cont);
     lv_obj_set_style_text_color(tick150, COLOR_TEXT_DIM, 0);
-    lv_label_set_text(tick150, "150");
+    lv_label_set_text(tick150, "100");
     lv_obj_align(tick150, LV_ALIGN_RIGHT_MID, 0, 0);
 
     /* RPM 目标值标签 */
     s_load_label = lv_label_create(scr);
     lv_obj_set_style_text_color(s_load_label, COLOR_ACCENT, 0);
     lv_label_set_text(s_load_label, "126 RPM");
-    lv_obj_align(s_load_label, LV_ALIGN_TOP_MID, 0, 258);
+    lv_obj_align(s_load_label, LV_ALIGN_TOP_MID, 0, 253);
 
-    /* Slider 主体 (y=272) */
+    /* Slider 主体 (y=270) */
     s_load_slider = lv_slider_create(scr);
-    lv_obj_set_size(s_load_slider, 208, 28);
-    lv_obj_align(s_load_slider, LV_ALIGN_TOP_MID, 0, 272);
+    lv_obj_set_size(s_load_slider, 208, 20);
+    lv_obj_align(s_load_slider, LV_ALIGN_TOP_MID, 0, 270);
     lv_slider_set_range(s_load_slider, 0, 100);
 
     /* Slider 主轨道样式 */
@@ -420,16 +426,16 @@ void Dashboard_UI_Init(lv_obj_t *scr)
     lv_obj_add_event_cb(s_load_slider, on_load_change, LV_EVENT_VALUE_CHANGED, NULL);
 
     /* ========================================================
-     * 7. Turn Signals (208×20, 居中, y=305)
+     * 7. Turn Signals (208×20, 居中, y=292)
      * ======================================================== */
     lv_obj_t *turn_bg = lv_img_create(scr);
     lv_img_set_src(turn_bg, &img_turn_signals);
-    lv_obj_align(turn_bg, LV_ALIGN_TOP_MID, 0, 305);
+    lv_obj_align(turn_bg, LV_ALIGN_TOP_MID, 0, 292);
 
     /* 左箭头点击区 */
     lv_obj_t *left_btn = lv_obj_create(scr);
     lv_obj_set_size(left_btn, 104, 20);
-    lv_obj_set_pos(left_btn, 16, 305);
+    lv_obj_set_pos(left_btn, 16, 292);
     lv_obj_set_style_bg_opa(left_btn, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(left_btn, 0, 0);
     lv_obj_add_event_cb(left_btn, on_turn_left, LV_EVENT_CLICKED, NULL);
@@ -438,19 +444,19 @@ void Dashboard_UI_Init(lv_obj_t *scr)
     /* 右箭头点击区 */
     lv_obj_t *right_btn = lv_obj_create(scr);
     lv_obj_set_size(right_btn, 104, 20);
-    lv_obj_set_pos(right_btn, 120, 305);
+    lv_obj_set_pos(right_btn, 120, 292);
     lv_obj_set_style_bg_opa(right_btn, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(right_btn, 0, 0);
     lv_obj_add_event_cb(right_btn, on_turn_right, LV_EVENT_CLICKED, NULL);
     lv_obj_clear_flag(right_btn, LV_OBJ_FLAG_SCROLLABLE);
 
     /* ========================================================
-     * 8. Warning Dots (208×16, flex row, 居中, y=325)
+     * 8. Warning Dots (208×8, flex row, 居中, y=312)
      * ========================================================
      *    6 个 8×8 圆点, gap 约 26px */
     lv_obj_t *dots_cont = lv_obj_create(scr);
-    lv_obj_set_size(dots_cont, 208, 16);
-    lv_obj_align(dots_cont, LV_ALIGN_TOP_MID, 0, 325);
+    lv_obj_set_size(dots_cont, 208, 8);
+    lv_obj_align(dots_cont, LV_ALIGN_TOP_MID, 0, 312);
     lv_obj_set_style_bg_opa(dots_cont, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(dots_cont, 0, 0);
     lv_obj_set_style_pad_all(dots_cont, 0, 0);
@@ -471,8 +477,6 @@ void Dashboard_UI_Init(lv_obj_t *scr)
     }
 
     /* 初始化心跳时间戳 */
-    s_last_hb_tick = xTaskGetTickCount();
-
     LOG_I("[DASH] UI initialized\r\n");
 }
 
@@ -487,7 +491,7 @@ void Dashboard_Update(void)
     TickType_t now = xTaskGetTickCount();
     bool was_online = snap.motor_online;
     if (snap.motor_online &&
-        ((now - s_last_hb_tick) > pdMS_TO_TICKS(HEARTBEAT_TIMEOUT_MS))) {
+        ((now - snap.last_hb_tick) > pdMS_TO_TICKS(HEARTBEAT_TIMEOUT_MS))) {
         snap.motor_online = false;
         Dashboard_Data_Lock();
         g_dash_state.motor_online = false;
@@ -497,27 +501,16 @@ void Dashboard_Update(void)
     /* ---- CAN 指示灯 ---- */
     if (s_can_led != NULL) {
         bool online = snap.motor_online;
-        lv_color_t led_color = online ? COLOR_OK_GREEN : COLOR_ERROR_RED;
 
         /* 在线: 闪烁 (500ms 周期), 离线: 常亮 */
         if (online) {
-            uint32_t half_period = 250;
             bool led_on = ((now % pdMS_TO_TICKS(500)) < pdMS_TO_TICKS(250));
-            lv_obj_set_style_bg_color(s_can_led, led_on ? led_color : lv_color_hex(0x0A1A1A), 0);
+            lv_img_set_src(s_can_led, &img_can_dot_green);
+            lv_obj_set_style_img_opa(s_can_led, led_on ? LV_OPA_COVER : LV_OPA_20, 0);
         } else {
-            lv_obj_set_style_bg_color(s_can_led, led_color, 0);
+            lv_img_set_src(s_can_led, &img_can_dot_red);
+            lv_obj_set_style_img_opa(s_can_led, LV_OPA_COVER, 0);
         }
-    }
-
-    /* ---- 错误框 ---- */
-    bool is_fault = (snap.error_code != 0);
-    set_error_box_style(is_fault, snap.error_code);
-
-    /* ---- RPM 弧线 ---- */
-    if (s_rpm_arc != NULL) {
-        uint16_t rpm = snap.rpm;
-        if (rpm > 12000) rpm = 12000;
-        lv_meter_set_indicator_end_value(s_meter, s_rpm_arc, (int32_t)rpm);
     }
 
     /* ---- RPM 数值 ---- */
@@ -546,7 +539,8 @@ void Dashboard_Update(void)
     /* ---- 离线时，如果之前在线则更新指示灯 ---- */
     if (was_online && !snap.motor_online) {
         if (s_can_led != NULL) {
-            lv_obj_set_style_bg_color(s_can_led, COLOR_ERROR_RED, 0);
+            lv_img_set_src(s_can_led, &img_can_dot_red);
+            lv_obj_set_style_img_opa(s_can_led, LV_OPA_COVER, 0);
         }
     }
 }

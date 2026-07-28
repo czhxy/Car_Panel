@@ -23,7 +23,7 @@
 | LCD 演示与触摸测试 | **100%** | `task/mod_test.c/h` | 10 项综合测试 + 触摸坐标验证（LVGL 接管后保留备用） |
 | **LVGL 移植与 Demo** | **100%** | `third_lib/LVGL/` + `task/task_lcd_demo.c` | v8.3.11，DMA2D GPU 加速，双缓冲，Widgets Demo 跑通 |
 | 电机传感器驱动 | 5% | `driver/mod_motor.c/h` | 仅占位函数（返回 0.0f） |
-| **LVGL 仪表盘 UI** | **90%** | `task/task_dashboard_ui.c/h` + `task/mod_dashboard_data.c/h` | 静态 UI 全貌构建完成，CAN 数据→UI 更新链路实现，25ms 刷新周期 |
+| **LVGL 仪表盘 UI** | **95%** | `task/task_dashboard_ui.c/h` + `task/mod_dashboard_data.c/h` | 已替换仪表盘资源、隐藏指定图标和错误码，保留 RPM 滑块拖动/CAN 下发，A/B Target 已验证零错误零警告 |
 
 ---
 
@@ -36,11 +36,10 @@ tools/
   bin_to_c_array.py       一次性地将 pic/*.bin → C 数组 + lv_img_dsc_t
 
 pic/
-  dashboard_images.h      7 张图片的 extern lv_img_dsc_t 声明
-  dashboard_images.c      7 张图片的 const uint8_t[] 像素数据 + 描述符
-                          约 60KB Flash（Top Bar 208×32, Frame 120×110,
-                          ODO 65×48, BATTERY 65×48, SOC 65×48,
-                          Turn Signals 208×20, mode 24×12）
+  dashboard_images.h      当前使用图片的 extern lv_img_dsc_t 声明
+  dashboard_images.c      当前使用图片的 const uint8_t[] 像素数据 + 描述符
+                          Top Bar、arc-bg、arc-fill、CAN 状态点、CAN 文本、
+                          Turn Signals 和 mode；旧图片仍保留在 pic/，但不会被转换
 
 task/
   mod_dashboard_data.h    DashboardState 结构体 + DashboardCard 枚举 +
@@ -62,29 +61,26 @@ task/
 
 ```
 y=7    Top Bar (208×32)           ← lv_img(img_top_bar)
-         └─ CAN LED (8×8 圆)       ← 小圆点叠放 (85,13)，在线=绿色闪烁，离线=红色常亮
+         └─ CAN 区域                 ← 覆盖旧静态区域，叠加 6×6 状态点 + CAN 文本图片
 y=45   Divider                    ← lv_obj 208×1, rgba(0CCFF,0.08)
-y=49   Error Box (150×23)         ← LVGL 控件构建（动态红/绿色切换）
-         ├ 错误图标 7×7 圆角方块   ← 绿色=OK, 红色=FAULT
-         ├ 标题 "STATUS" + 消息    ← lv_label ×2
-         └ 错误码 "OK" / "E002"    ← lv_label
+y=49   Error Box (150×23)         ← 已隐藏，保留代码在 #if 0 中
 y=72   Gauge (120×110, 居中)      ← 容器
-         ├ Frame 背景图            ← lv_img(img_frame, 120×110)
-         ├ RPM 弧形指示            ← lv_meter + lv_meter_add_arc (0–12000, 270°, 135°起点)
+         ├ 圆弧背景/填充            ← lv_img(img_arc_bg) + lv_img(img_arc_fill)
          ├ RPM 数值 "6800"         ← lv_label, Montserrat 28
          └ 单位 "RPM"              ← lv_label
 y=190  Bottom Cards (208×48)      ← flex row, gap 6
-         ├ ODO Card (65×48)        ← lv_img(img_odo) + lv_label("圈数")
-         ├ BATT Card (65×48)       ← lv_img(img_battery) + lv_label("78%")
-         └ SOC Card (65×48)        ← lv_img(img_soc) + lv_label("85%")
+         ├ ODO Card (65×48)        ← 卡片/数值标签，图标已隐藏
+         ├ BATT Card (65×48)       ← 卡片/数值标签，图标已隐藏
+         └ SOC Card (65×48)        ← 卡片/数值标签，图标已隐藏
               └ 选中卡片边框高亮    ← #00E5FF (选中) / 暗色 (未选中)
-y=244  Load Bar (208×28)          ← lv_slider (交互型 RPM 下发)
+y=240  Load Bar 刻度 (208×12)     ← lv_label (0, 75, 150 RPM)
+         滑块: y=270, 208×20       ← lv_slider (交互型 RPM 下发)
          刻度: 0, 75, 150 RPM      ← lv_label
-         目标值: "126 RPM"         ← lv_label, 拖动后实时变化
-y=305  Turn Signals (208×20)      ← lv_img(img_turn_signals)
+         目标值: y=253 "126 RPM"  ← lv_label, 拖动后实时变化
+y=292  Turn Signals (208×20)      ← lv_img(img_turn_signals)
          ├ 左箭头点击区 104×20     ← 透明 lv_obj (卡片左移)
          └ 右箭头点击区 104×20     ← 透明 lv_obj (卡片右移)
-y=325  Warning Dots (208×16)      ← flex row, 6 个 8×8 圆点
+y=312  Warning Dots (208×8)       ← flex row, 6 个 8×8 圆点
          ABS(黄)/ESC(橙)/引擎(红)/电池(绿)/远光(蓝)/车门(粉)
          电池默认点亮(90%)，其余暗(20%)
          引擎故障时 红色点亮
@@ -222,8 +218,10 @@ CAN_RX Task (prio 4)             LCD_DEMO Task (prio 3)
 | 图片 | 使用方式 | 原因 |
 |---|---|---|
 | Top Bar.bin | `lv_img` 背景 | SPORT/档位已固化在图中 |
-| Frame.bin | `lv_img` 背景 | 装饰性表盘圆环 |
-| ODO/BATTERY/SOC.bin | `lv_img` 背景 | 卡片底纹，数值用 `lv_label` 叠放 |
+| arc-bg.bin + arc-fill.bin | `lv_img` 叠加 | 替换 Frame.bin；RPM 数字使用 LVGL 标签实时刷新 |
+| ODO/BATTERY/SOC.bin | **不使用** | 仅保留卡片和实时数值标签，避免显示图标 |
+| can-dot_green.bin + can-dot_red.bin | `lv_img` 状态点 | 替换旧 CAN 状态点，在线闪烁、离线红色常亮 |
+| can-label.bin | `lv_img` 文本 | 与状态点一起替换 Top Bar 中的 CAN 区域 |
 | Turn Signals.bin | `lv_img` 背景 | 箭头底图，点击区用透明 `lv_obj` 覆盖 |
 | mode.bin | `lv_img`（预留） | 档位 "D" 指示器 24×12 |
 | Error Box.bin | **不使用** | 改为 LVGL 控件构建（需动态变红/绿色） |
@@ -335,7 +333,7 @@ CAN_RX Task (prio 4)             LCD_DEMO Task (prio 3)
 
 ### P1 — 编译验证与调试
 
-- [ ] Keil 编译 0 error 0 warning 验证
+- [x] Keil 编译 0 error 0 warning 验证（`stm32f429`、`stm32f429_b`）
 - [ ] 烧录测试：LCD 显示仪表盘全貌
 - [ ] 验证 CAN LED 闪烁逻辑（无真实 CAN 数据时用 g_dash_state 手动注入测试值）
 - [ ] 验证 Load Bar 交互 → CAN TX 帧发送
@@ -380,6 +378,6 @@ LVGL 嵌套渲染可能较深，当前 LCD_DEMO 栈为 1024 字 (4KB)：
 
 6. **AB 分区调试**：编译 B 槽 Target 时，如果要将 B 镜像烧入 A 槽地址调试，需临时切换 scatter 起始地址
 
-7. **仪表盘图片数据在 Flash**：`dashboard_images.c` 约 60KB const 数据位于 .rodata/Flash，LVGL 逐字节读入 SRAM 后通过 DMA2D 渲染
+7. **仪表盘图片数据在 Flash**：`dashboard_images.c` 的 const 数据位于 .rodata/Flash；LVGL 绘制缓冲区和 DMA 缓冲均使用主 SRAM，FreeRTOS CCM 堆指针不用于 DMA
 
 8. **mode.bin 图片**：已转换为 24×12 像素数据，但在 `Dashboard_UI_Init()` 中未放置到 UI（计划中的档位 "D" 指示器，Top Bar 已固化此内容）

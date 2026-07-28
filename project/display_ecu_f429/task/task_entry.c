@@ -8,6 +8,7 @@
 #include "bsp_spi_lcd.h"
 #include "bsp_i2c_touch.h"
 #include "mod_comm_can.h"
+#include "mod_dashboard_data.h"
 #include "task_query.h"
 #include "task_lcd_demo.h"
 
@@ -54,6 +55,7 @@ void Task_Entry_All(void * pvParameters)
 
     BSP_SPI_LCD_Init();    /* SPI5 + ILI9341 */
     BSP_I2C_Touch_Init();  /* I2C1 + FT6336G */
+    Dashboard_Data_Init(); /* 在 CAN 子任务启动前创建共享状态和互斥锁 */
 
     /* ---- 创建 FreeRTOS 任务 ----
      * CAN_TX/RX:  512 字（队列收发 + 硬件调用）

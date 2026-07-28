@@ -2,14 +2,20 @@
 
 #include "mod_dashboard_data.h"
 #include <string.h>
+#include "task.h"
 
 /* ---- 全局变量 ---- */
 DashboardState g_dash_state;
 SemaphoreHandle_t g_dash_mutex = NULL;
+static bool s_dashboard_data_initialized = false;
 
 /* ---- 初始化 ---- */
 void Dashboard_Data_Init(void)
 {
+    if (s_dashboard_data_initialized) {
+        return;
+    }
+
     memset(&g_dash_state, 0, sizeof(g_dash_state));
 
     /* 设置默认值 */
@@ -21,8 +27,10 @@ void Dashboard_Data_Init(void)
     g_dash_state.rpm            = 6800;
     g_dash_state.error_code     = 0;
     g_dash_state.motor_online   = false;
+    g_dash_state.last_hb_tick   = xTaskGetTickCount();
 
     g_dash_mutex = xSemaphoreCreateMutex();
+    s_dashboard_data_initialized = true;
 }
 
 /* ---- 加锁 ---- */

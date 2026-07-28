@@ -127,6 +127,10 @@ void ModCommCan_OnRxFrame(const CanRxMsg *rx_msg)
     switch (mode) {
     case MODE_ID_HEARTBEAT:
     {
+        if (rx_msg->DLC < 5U) {
+            break;
+        }
+
         /* 心跳帧: [status, uptime_L, uptime_H, err_L, err_H, 0, 0, 0]
          * 解析 error_code 并更新在线状态 */
         uint16_t error_code = ((uint16_t)rx_msg->Data[4] << 8) | rx_msg->Data[3];
@@ -134,6 +138,7 @@ void ModCommCan_OnRxFrame(const CanRxMsg *rx_msg)
         Dashboard_Data_Lock();
         g_dash_state.error_code   = error_code;
         g_dash_state.motor_online = true;
+        g_dash_state.last_hb_tick = xTaskGetTickCount();
         Dashboard_Data_Unlock();
 
         LOG_D("[CAN] HB from motor: status=0x%02X error=0x%04X\r\n",
@@ -143,6 +148,10 @@ void ModCommCan_OnRxFrame(const CanRxMsg *rx_msg)
 
     case MODE_ID_STATUS_MOTOR:
     {
+        if (rx_msg->DLC < 7U) {
+            break;
+        }
+
         /* 电机状态帧 (0x110): [rpm_L, rpm_H, status, odo_0, odo_1, odo_2, odo_3, 0]
          * 待动力域正式实现后确认格式 */
         uint16_t rpm     = ((uint16_t)rx_msg->Data[1] << 8) | rx_msg->Data[0];

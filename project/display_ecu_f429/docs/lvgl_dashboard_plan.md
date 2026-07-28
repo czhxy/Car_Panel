@@ -49,7 +49,7 @@
 
 ### 3.1 当前状态
 
-`pic/` 目录有 15 个 .bin 文件，每个文件前 4 字节是 header（cf + 尺寸信息），后面是 RGB565 像素数据（2 字节/像素）。
+`pic/` 目录同时保留历史导出图片和本次新增图片。转换脚本只处理已在 `IMAGE_DEFS` 中定义的资源，其余历史 `.bin` 文件跳过；每个资源前 4 字节是 header，后面是 RGB565 像素数据（2 字节/像素）。
 
 已验证的 header 原始字节:
 
@@ -74,12 +74,14 @@
 | 图片 | LVGL 实现 | 原因 |
 |---|---|---|
 | Top Bar.bin | `lv_img` 背景 | SPORT/档位已固化在图中，CAN 指示用 `lv_led` 叠放 |
-| Frame.bin | `lv_img` 背景 | 装饰性表盘圆环 |
-| ODO/BATT/SOC.bin | `lv_img` 背景 | 卡片底纹，数值用 `lv_label` 叠放 |
+| arc-bg.bin + arc-fill.bin | `lv_img` 叠加 | 替换 Frame.bin；RPM 数字由 LVGL 标签实时显示 |
+| ODO/BATT/SOC.bin | **不使用** | 仅保留卡片和实时数值标签，图标创建代码置于 `#if 0` |
+| can-dot_green.bin + can-dot_red.bin | `lv_img` 状态点 | 替换旧 CAN 状态点，在线闪烁、离线红色常亮 |
+| can-label.bin | `lv_img` 文本 | 与状态点一起替换 Top Bar 中的 CAN 区域 |
 | Turn Signals.bin | `lv_img` 背景 | 箭头背景，点击区用透明 `lv_obj` 覆盖 |
 | mode.bin | `lv_img` | 档位 "D" 指示器 |
 | **不使用** | | |
-| Error Box.bin | LVGL 控件构建 | 需要动态变红/绿色 |
+| Error Box.bin | **不使用** | 错误码区域按当前需求隐藏，原实现保留在 `#if 0` |
 | load-bg/load-fill/load-label-*.bin | `lv_bar` + `lv_label` | 进度条用 LVGL 原生控件 |
 
 ---
@@ -172,53 +174,48 @@ LCD_DEMO Task:
 scr_act (#05080d 深色底)
 │
 ├── [y=7]  Top Bar    ← lv_img (img_top_bar, 208×32, 居中)
-│   └── CAN 指示灯     ← lv_led 叠放在 CAN 点位上 (85,13)
+│   └── CAN 区域       ← 覆盖旧静态区域，叠加 CAN 状态点和文本图片
 │
 ├── [y=45] Divider    ← lv_obj (208×1, rgba(0,204,255,0.08))
 │
-├── [y=49] Error Box  ← LVGL 控件构建 (150×23, 居中)
-│   ├── 错误图标       ← lv_obj (7×7 圆角方块)
-│   ├── 标题+消息      ← lv_label ×2 (垂直)
-│   └── 错误码         ← lv_label
+├── [y=49] Error Box  ← 已隐藏，原实现保留在 #if 0
 │
 ├── [y=72] Gauge      ← 容器 (120×110, 居中)
-│   ├── 背景圆环       ← lv_img (img_frame)
-│   ├── 弧形指示       ← lv_meter + lv_meter_add_arc
+│   ├── 圆弧背景/填充   ← lv_img (img_arc_bg) + lv_img (img_arc_fill)
 │   ├── RPM 数值       ← lv_label ("6800", font_28)
 │   └── RPM 单位       ← lv_label ("RPM")
 │
 ├── [y=190] Bottom Cards  ← flex row 容器 (208×48, gap 6, 居中)
-│   ├── ODO Card      ← lv_img (img_odo_card) + lv_label ("12,458")
-│   ├── BATT Card     ← lv_img (img_batt_card) + lv_label ("78%")
-│   └── SOC Card      ← lv_img (img_soc_card) + lv_label ("85%")
+│   ├── ODO Card      ← 卡片/数值标签，图标已隐藏
+│   ├── BATT Card     ← 卡片/数值标签，图标已隐藏
+│   └── SOC Card      ← 卡片/数值标签，图标已隐藏
 │
-├── [y=244] Load Bar  ← lv_slider (交互型, 208×28, 0–100→0–300 RPM)
-│   └── 刻度标签         ← lv_label (0, 75, 150, 300 RPM)
+├── [y=240] Load Bar 刻度 ← lv_obj (208×12)
+│   ├── 目标值标签       ← lv_label (y=253, 实时显示 RPM)
+│   └── 滑块             ← lv_slider (y=270, 208×20, 0–100→0–300 RPM)
 │
-├── [y=277] Turn Signals  ← lv_img (img_turn_signals, 208×20)
+├── [y=292] Turn Signals  ← lv_img (img_turn_signals, 208×20)
 │   ├── 左箭头点击区   ← 透明 lv_obj (104×20)
 │   └── 右箭头点击区   ← 透明 lv_obj (104×20)
 │
-└── [y=300] Warning Dots   ← flex row 容器 (208×16)
+└── [y=312] Warning Dots   ← flex row 容器 (208×8)
     └── 6个圆点 (8×8), 颜色各异, 电池点亮
 ```
 
-### 5.2 错误框颜色切换
+### 5.2 错误框颜色切换（当前隐藏）
 
 | 状态 | 背景 | 边框 | 图标 | 文字 | 错误码 |
 |---|---|---|---|---|---|
 | 正常 | rgba(51,204,77,0.04) | rgba(51,204,77,0.12) | `#33CC4D` | `#33CC4D` 80% | `"OK"` `#33CC4D` |
 | 故障 | rgba(245,66,54,0.04) | rgba(245,66,54,0.12) | `#F54236` | `#F54236` 80% | `"E002"` 白色 18% |
 
-CAN 指示灯同步: 在线=绿色闪烁，离线=红色常亮。
+错误码区域当前按需求隐藏，原有颜色切换代码保留在 `#if 0` 中；CAN 状态点同步为在线绿色闪烁、离线红色常亮。
 
 ### 5.3 RPM 表盘
 
-- 使用 `lv_meter` + `lv_meter_add_arc()` 画弧形指示（非传统指针，匹配 Figma 设计）
-- 刻度范围: 0–12000 RPM，270 度弧（起始角 135°，从左下到右下）
-- 弧线颜色: `#00e5ff`
+- 使用 `arc-bg.bin` + `arc-fill.bin` 两张 RGB565 图片叠加，替换原 `Frame.bin`
 - RPM 数值: `Montserrat 28` 字体，居中叠放
-- 更新: 每 25ms 从 `g_dash_state.rpm` 读取值，调 `lv_meter_set_indicator_value()`
+- 更新: 每 25ms 从 `g_dash_state.rpm` 读取值并刷新 LVGL 标签；圆弧图片本身为静态资源
 
 ### 5.4 负载进度条（交互型 RPM 下发控件）
 
@@ -228,15 +225,15 @@ Load Bar **不是一个显示控件**，而是用于**设定目标 RPM** 的交�
 - 范围: 0–100，每 1% 步进
 - 映射: `rpm_target = (load_pct / 100.0) × 300`（100% = 300 RPM）
 - 用户拖动滑块时，实时更新 `g_dash_state.rpm_target`
-- CAN TX 路径: `g_dash_state.rpm_target` → `CanProtocol_WheelCtlSend()` 发送电机控制帧（Mode ID 0x020）
+- CAN TX 路径: 滑块回调 → `g_dash_state.rpm_target` → `CanProto_SendFrame()` 发送电机控制帧（Mode ID 0x020）
 - 视觉样式: 背景 `rgba(255,255,255,0.04)`，填充 `#00ccff`，圆角 2，高 4px
-- 刻度标签: "0", "25", "75", "150", "300 RPM"（对应 RPM 映射值）
+- 刻度标签: "0", "75", "150"（对应 RPM 映射值）
 
 ```c
 // 示例代码
 slider = lv_slider_create(scr);
-lv_obj_set_size(slider, 208, 28);
-lv_obj_align(slider, LV_ALIGN_TOP_LEFT, 16, 244);
+lv_obj_set_size(slider, 208, 20);
+lv_obj_align(slider, LV_ALIGN_TOP_LEFT, 16, 270);
 lv_slider_set_range(slider, 0, 100);
 lv_slider_set_value(slider, 42, LV_ANIM_OFF);
 lv_obj_add_event_cb(slider, on_load_change, LV_EVENT_VALUE_CHANGED, NULL);
