@@ -12,6 +12,7 @@
 #include "mod_dashboard_data.h"
 #include "task_query.h"
 #include "task_lcd_demo.h"
+#include "task_vofa.h"   /* VOFA_DEBUG 开关见 task_vofa.h（临时调试） */
 
 void Task_Entry_All(void * pvParameters);
 void Heartbeat_Task(void * pvParameters);
@@ -83,6 +84,10 @@ void Task_Entry_All(void * pvParameters)
         LOG_E("[Main] UART_RX task create failed!\r\n");
     if (xTaskCreate(Task_LCD_Demo,    "LCD_DEMO",  1024, NULL, 3, NULL) != pdPASS)
         LOG_E("[Main] LCD_DEMO task create failed!\r\n");
+#if VOFA_DEBUG
+    if (xTaskCreate(Vofa_Task,       "VOFA",      256, NULL, 4, NULL) != pdPASS)
+        LOG_E("[Main] VOFA task create failed!\r\n");
+#endif
 
     vTaskDelete(NULL);
 }

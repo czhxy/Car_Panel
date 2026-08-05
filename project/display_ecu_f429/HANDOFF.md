@@ -24,7 +24,8 @@
 | LCD 演示与触摸测试 | **100%** | `task/mod_test.c/h` | 10 项综合测试 + 触摸坐标验证（LVGL 接管后保留备用） |
 | **LVGL 移植与 Demo** | **100%** | `third_lib/LVGL/` + `task/task_lcd_demo.c` | v8.3.11，DMA2D GPU 加速，双缓冲，Widgets Demo 跑通 |
 | 电机传感器驱动 | 5% | `driver/mod_motor.c/h` | 仅占位函数（返回 0.0f） |
-| **LVGL 仪表盘 UI** | **95%** | `task/task_dashboard_ui.c/h` + `task/mod_dashboard_data.c/h` | 已替换仪表盘资源、隐藏指定图标和错误码，保留 RPM 滑块拖动/CAN 下发，A/B Target 已验证零错误零警告 |
+| **LVGL 仪表盘 UI** | **96%** | `task/task_dashboard_ui.c/h` + `task/mod_dashboard_data.c/h` | 已替换仪表盘资源、隐藏指定图标和错误码；RPM 表盘由拖动条控制（0–100 ×3 → 0–300），拖动保留 CAN 下发；**移除 Top Bar 图片**，CAN 指示灯改用 LVGL 原生控件（6×6 红/绿圆点 + lv_label 文本框，**始终闪烁**：在线绿 / 离线红，500ms 周期）；**隐藏 0/50/100 刻度数字**；新增**红色 PAUSE 一键暂停按钮**（切换式：暂停归 0 锁滑块 / 恢复原值） |
+| VOFA+ 调试输出（临时） | **调试用** | `task/task_vofa.c/h` + `driver/usart6.c/h` | USART6 (PC6/PC7) 每 100ms 输出 rpm_target，firewater ASCII 格式；测试完成后整段移除（`VOFA_DEBUG` 开关） |
 
 ---
 
@@ -79,6 +80,28 @@ task/
   task_dashboard_ui.c     全部 UI 元素构建（~350 行） + 25ms 周期更新逻辑
 ```
 
+### 本次新增 — LVGL 仪表盘改进 + VOFA 调试（2026-08-05）
+
+```
+task/
+  task_vofa.h           VOFA 调试总开关 VOFA_DEBUG + Vofa_Task 声明
+  task_vofa.c           Vofa_Task：每 100ms 读 g_dash_state.rpm_target，
+                        USART6 以 firewater ASCII 格式发送 "%u\r\n"（临时，测试后删）
+
+driver/
+  usart6.h              USART6 发送原语声明
+  usart6.c              USART6 (PC6/PC7, AF8, APB2, 115200) 初始化 + SendByte/SendString
+                        仅发送无接收，专供 VOFA+（临时，测试后删）
+```
+
+**配合修改**：
+- `task/task_dashboard_ui.c`：
+  - **移除 Top Bar 图片，CAN 指示灯改用 LVGL 原生控件**：不再创建 `img_top_bar` 背景图（其内嵌静态状态点无论遮挡还是对齐都不可靠，曾导致"绿色常亮不闪烁"）。改为 6×6 圆形 `lv_obj`（在线绿色闪烁 / 离线红色常亮，直接改 `bg_color`/`bg_opa`）+ `lv_label` "CAN" 文本框，完全不依赖图片像素
+  - **RPM 由拖动条控制**：表盘数值改显示 `snap.rpm_target`（0–100 ×3 → 0–300），不再显示 CAN 实测 `snap.rpm`；`on_load_change` 保留 CAN 目标转速下发
+  - **隐藏刻度 + PAUSE 一键暂停**：注释掉 0/50/100 三个刻度 `lv_label`；仪表盘与 Load Bar 间新增红色圆角矩形按钮（80×30, y=200），切换式暂停——按下 rpm_target 归 0、滑块回 0 并锁定、发 CAN 0 帧，再按恢复暂停前值。`DashboardState` 新增 `paused` 标志，抽取 `send_rpm_target()` 公共下发函数
+- `task/task_entry.c`：`#if VOFA_DEBUG` 条件创建 `VOFA` 任务（256 字, prio 4）
+- `mdk/app.uvprojx`（2 Target）+ `app_b.uvprojx`：task 组新增 `task_vofa.c/h`，driver 组新增 `usart6.c/h`
+
 ### 历史新增（上次）
 
 详见 git 记录。
@@ -88,23 +111,22 @@ task/
 ## 仪表盘 UI 布局 (240×320，深色底 #05080D)
 
 ```
-y=7    Top Bar (208×32)           ← lv_img(img_top_bar)
-         └─ CAN 区域                 ← 覆盖旧静态区域，叠加 6×6 状态点 + CAN 文本图片
+y=13   CAN 指示灯（Top Bar 已移除）  ← 6×6 圆形 lv_obj (89,13)
+                                     始终 500ms 闪烁：在线绿 / 离线红
+       "CAN" 文本框                  ← lv_label，圆点右侧垂直居中
+                                       (lv_obj_align_to OUT_RIGHT_MID, gap 4)
 y=45   Divider                    ← lv_obj 208×1, rgba(0CCFF,0.08)
 y=49   Error Box (150×23)         ← 已隐藏，保留代码在 #if 0 中
 y=72   Gauge (120×110, 居中)      ← 容器
          ├ 圆弧背景/填充            ← lv_img(img_arc_bg) + lv_img(img_arc_fill)
          ├ RPM 数值 "6800"         ← lv_label, Montserrat 28
          └ 单位 "RPM"              ← lv_label
-y=190  Bottom Cards (208×48)      ← flex row, gap 6
-         ├ ODO Card (65×48)        ← 卡片/数值标签，图标已隐藏
-         ├ BATT Card (65×48)       ← 卡片/数值标签，图标已隐藏
-         └ SOC Card (65×48)        ← 卡片/数值标签，图标已隐藏
-              └ 选中卡片边框高亮    ← #00E5FF (选中) / 暗色 (未选中)
-y=240  Load Bar 刻度 (208×12)     ← lv_label (0, 75, 150 RPM)
-         滑块: y=270, 208×20       ← lv_slider (交互型 RPM 下发)
-         刻度: 0, 75, 150 RPM      ← lv_label
+y=190  Bottom Cards (208×48)      ← 已注释（代码保留）
+y=200  Pause 按钮 (80×30, 居中)   ← 红色圆角矩形 lv_btn + "PAUSE" 标签
+         一键暂停: 按下 rpm_target 归 0 + 滑块回 0 锁定; 再按恢复暂停前值
+y=240  Load Bar 刻度 (208×12)     ← 已注释（0/50/100 数字按用户要求隐藏）
          目标值: y=253 "126 RPM"  ← lv_label, 拖动后实时变化
+         滑块: y=270, 208×20       ← lv_slider (交互型 RPM 下发)
 y=292  Turn Signals (208×20)      ← lv_img(img_turn_signals)
          ├ 左箭头点击区 104×20     ← 透明 lv_obj (卡片左移)
          └ 右箭头点击区 104×20     ← 透明 lv_obj (卡片右移)
@@ -163,12 +185,16 @@ y=312  Warning Dots (208×8)       ← flex row, 6 个 8×8 圆点
 │    → Dashboard_UI_Init(scr) 启动时一次性构建                  │
 │    → Dashboard_Update() 每 25ms:                            │
 │       Dashboard_Data_GetSnapshot() → 读共享状态              │
-│       ├ RPM 弧线/数值刷新                                   │
+│       ├ RPM 数值刷新 ← rpm_target（拖动条控制）              │
 │       ├ 错误框颜色切换 (红/绿)                               │
-│       ├ CAN 指示灯闪烁 (500ms 周期)                          │
+│       ├ CAN 指示灯: 在线绿闪(500ms) / 离线红常亮              │
 │       ├ 心跳超时检测 (1.5s)                                 │
 │       ├ 卡片选择器高亮                                      │
 │       └ 警示灯状态更新                                      │
+│                                                            │
+│  VOFA (prio 4, 100ms):  [VOFA_DEBUG 临时]                  │
+│    → 读 g_dash_state.rpm_target                            │
+│    → USART6 firewater ASCII: "%u\r\n"                      │
 │                                                            │
 │  Heartbeat_Task (prio 1, 500ms):                            │
 │    → LED 翻转 + Can_Heartbeat() → Mod_Can_TxEvent()         │
@@ -207,6 +233,7 @@ HEARTBEAT (512, prio 1)
 UART_TX (256, prio 4)
 UART_RX (256, prio 4)
 LCD_DEMO (1024, prio 3)  ← 栈 1024 字 = 4KB，LVGL 渲染开销
+VOFA (256, prio 4)       ← [VOFA_DEBUG] USART6 firewater 输出（临时）
 ```
 
 ## 仪表盘线程安全设计
@@ -256,11 +283,11 @@ CAN_RX Task (prio 4)             LCD_DEMO Task (prio 3)
 
 | 图片 | 使用方式 | 原因 |
 |---|---|---|
-| Top Bar.bin | `lv_img` 背景 | SPORT/档位已固化在图中 |
+| Top Bar.bin | **不使用** | 内嵌静态 CAN 状态点无法受控（曾致"绿色常亮不闪烁"）；CAN 指示灯改用 LVGL 原生圆点 + 文本框 |
 | arc-bg.bin + arc-fill.bin | `lv_img` 叠加 | 替换 Frame.bin；RPM 数字使用 LVGL 标签实时刷新 |
 | ODO/BATTERY/SOC.bin | **不使用** | 仅保留卡片和实时数值标签，避免显示图标 |
-| can-dot_green.bin + can-dot_red.bin | `lv_img` 状态点 | 替换旧 CAN 状态点，在线闪烁、离线红色常亮 |
-| can-label.bin | `lv_img` 文本 | 与状态点一起替换 Top Bar 中的 CAN 区域 |
+| can-dot_green.bin + can-dot_red.bin | **不使用** | 已改用 LVGL 原生圆形 `lv_obj`（改 `bg_color` 即可切换红/绿） |
+| can-label.bin | **不使用** | 已改用 `lv_label` 文本框 "CAN" |
 | Turn Signals.bin | `lv_img` 背景 | 箭头底图，点击区用透明 `lv_obj` 覆盖 |
 | mode.bin | `lv_img`（预留） | 档位 "D" 指示器 24×12 |
 | Error Box.bin | **不使用** | 改为 LVGL 控件构建（需动态变红/绿色） |
@@ -361,8 +388,8 @@ CAN_RX Task (prio 4)             LCD_DEMO Task (prio 3)
 - **App 工程**：`mdk/app.uvprojx`，双 Target（stm32f429 / stm32f429_b），armcc V5.06, C99
 - **Bootloader 工程**：`mdk/boot.uvprojx`，独立编译
 - **LVGL 源文件**：118 个 `.c` 文件通过 12 个 Keil 分组管理（新增加 lv_font_montserrat_28.c）
-- **本工程新增源文件**：`dashboard_images.c`、`mod_dashboard_data.c`、`mod_dashboard_fault.c`、`task_dashboard_ui.c`、`mod_comm_uart.c`
-- **注意（既有问题）**：`app_b.uvprojx` 未配置 LVGL include path（`..\third_lib\LVGL\lvgl` 等），编译 `task_dashboard_ui.h` 报 `lvgl.h` 找不到。本次改动相关文件在 app_b 均编译通过，该错误与 UART 框架无关；如需 A/B 双槽完整编译需补 LVGL 路径
+- **本工程新增源文件**：`dashboard_images.c`、`mod_dashboard_data.c`、`mod_dashboard_fault.c`、`task_dashboard_ui.c`、`mod_comm_uart.c`、`usart6.c`、`task_vofa.c`
+- **注意（既有问题）**：`app_b.uvprojx` 未配置 LVGL include path（`..\third_lib\LVGL\lvgl` 等），编译 `task_dashboard_ui.h` 报 `lvgl.h` 找不到。本次新增文件（`usart6.c`/`task_vofa.c`）在 app_b 编译通过，该错误与本次改动无关；如需 A/B 双槽完整编译需补 LVGL 路径（另 app_b 还缺 `mod_dashboard_data`/`task_dashboard_ui` 等 dashboard 文件条目，属既有未完成状态）
 - **Keil 编译器 Define**：`STM32F429_439xx,USE_STDPERIPH_DRIVER,LV_LVGL_H_INCLUDE_SIMPLE,LV_CONF_INCLUDE_SIMPLE`（B 槽额外 `APP_SLOT_B`）
 - **Include Paths**：新增 `..\pic` 路径（包含 `..\bootloader;..\pic;..\third_lib\LVGL\lvgl;..\third_lib\LVGL\lvgl\examples\porting` 等）
 - App A 槽 → 0x08020000，App B 槽 → 0x08080000
@@ -393,14 +420,59 @@ CAN_RX Task (prio 4)             LCD_DEMO Task (prio 3)
 
 ---
 
+## 本次已完成 — LVGL 暂停按钮 + 隐藏刻度数字（2026-08-06）
+
+**目标**：① 注释掉滑动条上方 0/50/100 三个刻度数字；② 在滑动条和仪表盘之间新增红色圆角矩形的"一键暂停"按钮。
+
+**① 隐藏 0/50/100 刻度数字**
+- `task_dashboard_ui.c` 中刻度标签容器 `tick_cont`（含 0/50/100 三个 `lv_label`）整块注释，保留代码便于恢复
+
+**② PAUSE 一键暂停按钮（红色圆角矩形）**
+- 位置：仪表盘与 Load Bar 之间，`y=200` 居中，80×30，`radius=8`，红色 `COLOR_ERROR_RED`，白色 "PAUSE" 文字（项目无中文字体，用英文）
+- 交互（用户确认：**切换·恢复原值**）：
+  - 按下进入暂停：保存当前滑块位置 `s_pre_pause_pct` → `rpm_target` 归 0 → 滑块 `lv_slider_set_value(0)` 并 `clear_flag(CLICKABLE)` 锁定 → 发 CAN 目标转速 0 帧 → 表盘/VOFA/滑块标签同步为 0
+  - 再按解除暂停：滑块回到暂停前位置 → `rpm_target` 恢复原值（`pct×3`）→ 恢复 `CLICKABLE` → 发 CAN 原值帧
+- `DashboardState` 新增 `paused` 标志；`on_load_change` 增加防御检查（暂停中忽略滑块变化）
+- 抽取 `send_rpm_target()` 公共函数，`on_load_change` / `on_pause_click` 共用 CAN 下发
+
+**验证**：app.uvprojx（stm32f429 A 槽）编译 **0 Error 0 Warning**
+
+---
+
+## 本次已完成 — LVGL 仪表盘改进 + VOFA 调试（2026-08-05）
+
+**目标**：① 修复 CAN 指示灯不闪烁；② RPM 表盘值改由拖动条控制；③ 每 100ms 经串口发 firewater 格式 RPM 供 VOFA+ 看波形。
+
+**① CAN 指示灯（最终方案：移除 Top Bar 图片）**
+- 根因：`img_top_bar` 图片内嵌了静态状态点，无论遮挡还是对齐都不可靠，用户看到的恒是图片自带的静态点（常亮、不闪烁）
+- 方案：**不再创建 Top Bar 背景图**。CAN 指示灯改用 LVGL 原生控件——6×6 圆形 `lv_obj`（在线绿色 500ms 闪烁 / 离线红色常亮，直接改 `bg_color`/`bg_opa`）+ `lv_label` "CAN" 文本框，完全不依赖任何图片像素
+- 结果：**始终闪烁**（在线绿 / 离线红，500ms 周期，`now % 500 < 250`），颜色区分通信状态；彻底摆脱图片内容干扰。用户确认采用"始终闪烁，颜色区分"语义
+
+**② RPM 由拖动条控制**
+- 表盘数值改显示 `g_dash_state.rpm_target`（拖动条 0–100 ×3 → 0–300 RPM），不再显示 CAN 实测 `rpm`
+- 拖动仍通过 `on_load_change` 保留 CAN 目标转速下发（`CanProto_SendFrame`）
+
+**③ VOFA+ firewater 波形输出（临时）**
+- 新增 `driver/usart6.c/h`：USART6 (PC6/PC7, AF8, APB2, 115200)，仅发送
+- 新增 `task/task_vofa.c/h`：`Vofa_Task` 每 100ms 读 `rpm_target`，以 firewater ASCII 格式发 `"%u\r\n"`
+- USART6 与 USART1（日志 + 查询协议）完全隔离，波形干净
+- **临时**：`VOFA_DEBUG` 开关（task_vofa.h），测试完成后置 0 或整段删除（usart6.c/h、task_vofa.c/h、task_entry 引用、mdk 工程引用）
+
+**验证**：app.uvprojx（stm32f429 A 槽）编译 **0 Error 0 Warning**；app_b 仅报既有 `lvgl.h` 缺失问题，未引入新错误
+
+---
+
 ## 下一步待做工作（按优先级）
 
 ### P1 — 编译验证与调试
 
-- [x] Keil 编译 0 error 0 warning 验证（`stm32f429`、`stm32f429_b`）
-- [ ] 烧录测试：LCD 显示仪表盘全貌
-- [ ] 验证 CAN LED 闪烁逻辑（无真实 CAN 数据时用 g_dash_state 手动注入测试值）
-- [ ] 验证 Load Bar 交互 → CAN TX 帧发送
+- [x] Keil 编译 0 error 0 warning 验证（`stm32f429` A 槽）
+- [x] 移除 Top Bar 图片，CAN 指示灯改用 LVGL 原生圆点 + 文本框
+- [ ] 烧录测试：LCD 显示仪表盘全貌，确认 CAN 指示灯**红色闪烁**（无心跳，始终闪）
+- [ ] 接动力域心跳后验证 CAN 指示灯变**绿色闪烁**（颜色切换正常）
+- [ ] 验证 Load Bar 交互 → CAN TX 帧发送 + 表盘 RPM 实时变化
+- [ ] VOFA+ 接 USART6 (PC6/PC7) 验证 RPM 波形（100ms 间隔，firewater ASCII）
+- [ ] 烧录测试：PAUSE 按钮 → 表盘/VOFA/CAN 帧归 0、滑块锁定；再按恢复暂停前值
 
 ### P2 — 动力域 CAN 协议帧补齐
 

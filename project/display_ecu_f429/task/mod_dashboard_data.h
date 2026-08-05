@@ -32,6 +32,7 @@ typedef struct {
     uint8_t  soc_level;         /* SOC % */
     uint8_t  load_pct;          /* 负载 % (0–100, 映射到 0–300 RPM 目标) */
     uint16_t rpm_target;        /* 目标转速 (由 Load Bar 交互设定) */
+    bool     paused;            /* 一键暂停标志: true=速度锁定为 0 */
     DashboardCard selected_card;/* 当前选中卡片 */
     uint32_t last_hb_tick;      /* 最后收到心跳的 tick (用于超时检测) */
 } DashboardState;
