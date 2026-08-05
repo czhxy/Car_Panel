@@ -56,13 +56,7 @@ int fputc(int ch, FILE *f)
 	return ch;
 }
 
-// ===== RX 环形缓冲区 (ISR → 任务) =====
-#define RX_BUF_SIZE  64
-static volatile uint8_t rx_buf[RX_BUF_SIZE];
-static volatile uint8_t rx_head = 0;
-static volatile uint8_t rx_tail = 0;
-
-// ===== 非阻塞接收 (无数据时返回 -1) =====
+// ===== 非阻塞接收 (无数据时返回 -1, Bootloader YMODEM 轮询使用) =====
 int UART_ReceiveByte(void)
 {
     // 检查并清除溢出标志 (ORE 不清理会阻塞后续接收)
@@ -73,18 +67,6 @@ int UART_ReceiveByte(void)
 
     if (USART_GetFlagStatus(USART1, USART_FLAG_RXNE) != RESET) {
         return (int)USART_ReceiveData(USART1);
-    }
-    return -1;
-}
-
-// ===== 从中断接收环形缓冲区取一字节 (任务调用) =====
-int UART_RxGet(void)
-{
-    uint8_t byte;
-    if (rx_head != rx_tail) {
-        byte = rx_buf[rx_tail];
-        rx_tail = (rx_tail + 1) % RX_BUF_SIZE;
-        return (int)byte;
     }
     return -1;
 }
@@ -138,24 +120,6 @@ void UART_Printf(char *format, ...)
 	UART_SendString(String);
 }
 
-#ifndef BOOTLOADER
-void USART1_IRQHandler(void)
-{
-	// RXNE: 收到数据，读 DR 存入环形缓冲区
-	if (USART_GetITStatus(USART1, USART_IT_RXNE) == SET) {
-		uint8_t ch = (uint8_t)USART_ReceiveData(USART1);   // 读 DR 自动清 RXNE
-		uint8_t next = (rx_head + 1) % RX_BUF_SIZE;
-		if (next != rx_tail) {   // 缓冲区未满
-			rx_buf[rx_head] = ch;
-			rx_head = next;
-		}
-		// 缓冲区满则丢弃，避免死锁
-	}
-
-	// ORE: 溢出，读 SR+DR 清除
-	if (USART_GetFlagStatus(USART1, USART_FLAG_ORE) != RESET) {
-		(void)USART1->SR;
-		(void)USART1->DR;
-	}
-}
-#endif
+/* USART1_IRQHandler 已在 firmware/cmsis/device/stm32f4xx_it.c 中定义（App 专用），
+ * 转发到 task 层 Mod_Uart_RxIRQHandler()，与 CAN1_RX0_IRQHandler 对齐。
+ * 本文件为纯硬件层，不依赖任何 task 模块。 */

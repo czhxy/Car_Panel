@@ -505,6 +505,16 @@
               <FilePath>..\task\mod_comm_can.h</FilePath>
             </File>
             <File>
+              <FileName>mod_comm_uart.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\task\mod_comm_uart.c</FilePath>
+            </File>
+            <File>
+              <FileName>mod_comm_uart.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\task\mod_comm_uart.h</FilePath>
+            </File>
+            <File>
               <FileName>task_entry.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\task\task_entry.c</FilePath>

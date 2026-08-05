@@ -8,6 +8,7 @@
 #include "bsp_spi_lcd.h"
 #include "bsp_i2c_touch.h"
 #include "mod_comm_can.h"
+#include "mod_comm_uart.h"
 #include "mod_dashboard_data.h"
 #include "task_query.h"
 #include "task_lcd_demo.h"
@@ -53,6 +54,9 @@ void Task_Entry_All(void * pvParameters)
     Mod_Can_Init();        /* 先创建队列，再初始化硬件使能中断 */
     BSP_CAN_Init();
 
+    Mod_Uart_Init();       /* 创建 UART 收发队列（UART_Init 硬件已在 main 中完成） */
+    Query_Task_Init();     /* 查询协议业务初始化（确保 task_query 被链接） */
+
     BSP_SPI_LCD_Init();    /* SPI5 + ILI9341 */
     BSP_I2C_Touch_Init();  /* I2C1 + FT6336G */
     Dashboard_Data_Init(); /* 在 CAN 子任务启动前创建共享状态和互斥锁 */
@@ -62,20 +66,21 @@ void Task_Entry_All(void * pvParameters)
      * CAN_TEST:   256 字（简单轮询）
      * KEY_SCAN:   256 字（GPIO 轮询）
      * HEARTBEAT:  512 字（printf/vsprintf 栈开销大）
-     * UART_QUERY: 256 字（串口查询）
+     * UART_TX:    256 字（TX 队列消费 + 串口发送）
+     * UART_RX:    256 字（字节队列 + 拼包 + 业务回调）
      * LCD_DEMO:   512 字（GUI 绘制栈开销大） */
     if (xTaskCreate(Mod_Can_TxTask,   "CAN_TX",     512, NULL, 4, NULL) != pdPASS)
         LOG_E("[Main] CAN_TX task create failed!\r\n");
     if (xTaskCreate(Mod_Can_RxTask,   "CAN_RX",     512, NULL, 4, NULL) != pdPASS)
         LOG_E("[Main] CAN_RX task create failed!\r\n");
-    if (xTaskCreate(CAN_Test_Task,    "CAN_TEST",   256, NULL, 4, NULL) != pdPASS)
-        LOG_E("[Main] CAN_TEST task create failed!\r\n");
     if (xTaskCreate(prvKeyScanTask,   "KEY_SCAN",   256, NULL, 2, NULL) != pdPASS)
         LOG_E("[Main] KEY_SCAN task create failed!\r\n");
     if (xTaskCreate(Heartbeat_Task,   "HEARTBEAT",  512, NULL, 1, NULL) != pdPASS)
         LOG_E("[Main] HEARTBEAT task create failed!\r\n");
-    if (xTaskCreate(UART_Query_Task,  "UART_QUERY", 256, NULL, 2, NULL) != pdPASS)
-        LOG_E("[Main] UART_QUERY task create failed!\r\n");
+    if (xTaskCreate(UART_TX_Task,     "UART_TX",    256, NULL, 4, NULL) != pdPASS)
+        LOG_E("[Main] UART_TX task create failed!\r\n");
+    if (xTaskCreate(UART_RX_Task,     "UART_RX",    256, NULL, 4, NULL) != pdPASS)
+        LOG_E("[Main] UART_RX task create failed!\r\n");
     if (xTaskCreate(Task_LCD_Demo,    "LCD_DEMO",  1024, NULL, 3, NULL) != pdPASS)
         LOG_E("[Main] LCD_DEMO task create failed!\r\n");
 

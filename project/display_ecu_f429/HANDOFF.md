@@ -13,10 +13,11 @@
 | FreeRTOS 集成 | 100% | `third_lib/FreeRTOS` | v11.3.0，heap_4 @ CCM，8 任务运行 |
 | CAN 通信框架 | 100% | `task/mod_comm_can.c/h` | TX/RX 双 FreeRTOS 队列，ISR 接收，心跳，测试帧 |
 | CAN 协议层 | 90% | `task/task_comm_can_protocol.c/h`, `protocol/CAN_Protocol.h` | ID 编解码完成，电机控制帧周期发送，调试查询占位 |
-| 串口日志 | 100% | `app/bsp_log.h`, `driver/usart.c/h` | printf 重定向，`LOG_E/W/I/D` 宏，环形缓冲 RX |
+| 串口日志 | 100% | `app/bsp_log.h`, `driver/usart.c/h` | printf 重定向，`LOG_E/W/I/D` 宏，纯硬件原语（App 无 ISR/环形缓冲，USART1 ISR 在 stm32f4xx_it.c） |
+| UART 通信框架 | **100%** | `task/mod_comm_uart.c/h` | 仿 CAN：字节队列(256) + TX 包队列(8) + `UART_TX`/`UART_RX` 双任务 + 弱符号回调，0xAA 0x55 拼包/组包/CRC16，环路验证 2/2 PASS |
 | 按键驱动 | 100% | `app/bsp_key.c/h` | 20ms 扫描，上升沿检测，FreeRTOS 信号量通知 |
 | LED 驱动 | 100% | `app/bsp_led.c/h` | 4 路 GPIO 输出 |
-| UART 查询服务 | 100% | `task/task_query.c/h` | `0xAA 0x55` 协议，芯片信息/VTOR 自证槽位查询 |
+| UART 查询服务 | 100% | `task/task_query.c/h` | 强符号覆盖 `ModCommUart_OnRxPacket`：芯片信息/VTOR 自证槽位查询 + 其他 type 回环 echo |
 | SPI LCD 驱动 (ILI9341V) | **100%** | `app/bsp_spi_lcd.c/h` + `app/bsp_spi_lcd_font.h` | SPI5 SPL 4 线接口，240×320 RGB565，ILI9341 全初始化序列 |
 | I2C 触摸驱动 (FT6336G) | **100%** | `app/bsp_i2c_touch.c/h` | I2C1 SPL 400kHz，2 点触摸，ID 验证 |
 | GUI 绘图库 | **100%** | `task/mod_gui.c/h` | 点/线/圆/矩形/三角形/字符/图片绘制（LVGL 接管后保留备用） |
@@ -28,6 +29,33 @@
 ---
 
 ## 新建文件清单
+
+### 本次新增 — UART 通信框架（查询链路拆分）
+
+```
+task/
+  mod_comm_uart.h    UART 通信框架头文件：队列深度/帧格式/API/弱符号回调声明
+  mod_comm_uart.c    UART 通信框架实现（仿 mod_comm_can）：
+                       RX: USART1 ISR → 字节队列(256) → UART_RX_Task 拼包
+                           → ModCommUart_OnRxPacket() [弱符号]
+                       TX: Mod_Uart_SendPacket() 组包入 TX 队列(8)
+                           → UART_TX_Task 临界区消费 → UART_SendArray()
+                       帧格式: [0xAA][0x55][type][len][data][crc16_hi][crc16_lo]
+                       len==0 帧兼容 PC 旧查询指令（无 CRC），len>0 严格 CRC 校验
+
+tools/
+  uart_loopback_test.py  环路验证脚本：
+                          测试1 chip info 查询 → 应答 [AA 55 01 0D <13B> <crc>]
+                          测试2 回环 echo → [AA 55 10 04 01 02 03 04 <crc>] 原样回发
+                          实测 2 PASS / 0 FAIL
+```
+
+**配合修改**：
+- `driver/usart.c/h`：移除 App 用 ISR + 环形缓冲 + `UART_RxGet`，保留纯硬件原语
+- `firmware/cmsis/device/stm32f4xx_it.c/h`：新增 `USART1_IRQHandler` 转发到 `Mod_Uart_RxIRQHandler()`（与 `CAN1_RX0_IRQHandler` 对齐）
+- `task/task_query.c/h`：删除 `UART_Query_Task` 任务主体与"透传 CAN"脚手架，改为覆盖回调
+- `task/task_entry.c`：`Mod_Uart_Init()` + `UART_TX`/`UART_RX` 任务（prio 4, 256 字）
+- `mdk/app.uvprojx` / `app_b.uvprojx`：task 分组新增 `mod_comm_uart.c/h`
 
 ### 本次新增 — 仪表盘 UI
 
@@ -93,7 +121,7 @@ y=312  Warning Dots (208×8)       ← flex row, 6 个 8×8 圆点
 │ 硬件层                                                     │
 │  CAN FIFO0 ISR → Mod_Can_RxIRQHandler() → CanRxQueue       │
 │  Systick ISR → FreeRTOS tick                               │
-│  USART1 IRQ → driver/usart.c 环形缓冲 RX                    │
+│  USART1 ISR → Mod_Uart_RxIRQHandler() → UartRxQueue 字节队列│
 │  KEY ISR → GPIO 扫描 → xSemaphoreGive                      │
 └────────────────────────────────────────────────────────────┘
 
@@ -119,8 +147,16 @@ y=312  Warning Dots (208×8)       ← flex row, 6 个 8×8 圆点
 │  KEY_SCAN (prio 2, 20ms):                                   │
 │    → 按键扫描 → xSemaphoreGive                              │
 │                                                            │
-│  UART_QUERY (prio 2):                                      │
-│    → 状态机解析 0xAA 0x55 协议 → 查询应答                     │
+│  UART_TX (prio 4):                                         │
+│    → xQueueReceive(UartTxQueue) [portMAX_DELAY]            │
+│    → 临界区 UART_SendArray() 发送（与 printf 互斥）           │
+│                                                            │
+│  UART_RX (prio 4):                                         │
+│    → xQueueReceive(UartRxQueue 字节队列) [100ms]            │
+│    → 拼包状态机 0xAA 0x55 type len data crc16              │
+│    → ModCommUart_OnRxPacket() [强符号]                      │
+│       ├ type=0x01 chip info → 应答 13B（分区/VTOR 自证）      │
+│       └ 其他 type → 原样回发（环路验证 echo）                  │
 │                                                            │
 │  LCD_DEMO (prio 3, 5ms):                                   │
 │    → lv_tick_inc() + lv_timer_handler()                     │
@@ -155,6 +191,8 @@ BSP_LED_Init()
 BSP_KEY_Init()
 Mod_Can_Init()          ← 先创建 CAN 队列，再使能硬件中断
 BSP_CAN_Init()
+Mod_Uart_Init()         ← 创建 UART 收发队列（UART_Init 硬件在 main 中已完成）
+Query_Task_Init()       ← 查询协议业务初始化（确保 task_query 被链接）
 BSP_SPI_LCD_Init()      ← SPI5 + ILI9341 (vTaskDelay 复位时序)
 BSP_I2C_Touch_Init()    ← I2C1 + FT6336G (ID 验证)
                           LVGL 由 LCD_DEMO 任务独立初始化（lv_init + port_init +
@@ -163,10 +201,11 @@ BSP_I2C_Touch_Init()    ← I2C1 + FT6336G (ID 验证)
 ---- 创建 FreeRTOS 任务 ----
 CAN_TX (512, prio 4)
 CAN_RX (512, prio 4)
-CAN_TEST (256, prio 4)
+CAN_TEST (256, prio 4)   ← 已注释
 KEY_SCAN (256, prio 2)
 HEARTBEAT (512, prio 1)
-UART_QUERY (256, prio 2)
+UART_TX (256, prio 4)
+UART_RX (256, prio 4)
 LCD_DEMO (1024, prio 3)  ← 栈 1024 字 = 4KB，LVGL 渲染开销
 ```
 
@@ -322,10 +361,35 @@ CAN_RX Task (prio 4)             LCD_DEMO Task (prio 3)
 - **App 工程**：`mdk/app.uvprojx`，双 Target（stm32f429 / stm32f429_b），armcc V5.06, C99
 - **Bootloader 工程**：`mdk/boot.uvprojx`，独立编译
 - **LVGL 源文件**：118 个 `.c` 文件通过 12 个 Keil 分组管理（新增加 lv_font_montserrat_28.c）
-- **本工程新增源文件**：`dashboard_images.c`、`mod_dashboard_data.c`、`mod_dashboard_fault.c`、`task_dashboard_ui.c`
+- **本工程新增源文件**：`dashboard_images.c`、`mod_dashboard_data.c`、`mod_dashboard_fault.c`、`task_dashboard_ui.c`、`mod_comm_uart.c`
+- **注意（既有问题）**：`app_b.uvprojx` 未配置 LVGL include path（`..\third_lib\LVGL\lvgl` 等），编译 `task_dashboard_ui.h` 报 `lvgl.h` 找不到。本次改动相关文件在 app_b 均编译通过，该错误与 UART 框架无关；如需 A/B 双槽完整编译需补 LVGL 路径
 - **Keil 编译器 Define**：`STM32F429_439xx,USE_STDPERIPH_DRIVER,LV_LVGL_H_INCLUDE_SIMPLE,LV_CONF_INCLUDE_SIMPLE`（B 槽额外 `APP_SLOT_B`）
 - **Include Paths**：新增 `..\pic` 路径（包含 `..\bootloader;..\pic;..\third_lib\LVGL\lvgl;..\third_lib\LVGL\lvgl\examples\porting` 等）
 - App A 槽 → 0x08020000，App B 槽 → 0x08080000
+
+---
+
+---
+
+## 本次已完成 — UART 通信框架（查询链路拆分，2026-08-05）
+
+**目标**：将原 `UART_Query_Task`（轮询解析 + 透传 CAN）拆分为 `UART_TX`/`UART_RX` 两个任务，框架参考 CAN（队列 + 任务 + 弱符号回调），bsp/mod/task 三层解耦。
+
+**验证结果**：
+- ✅ 环路验证脚本 `tools/uart_loopback_test.py` 实测 **2 PASS / 0 FAIL**
+  - 测试1：`AA 55 01 00` → 应答 `AA 55 01 0D` + 13B（mcu=STM32F429, 分区=App A, boot=0x08000000, app=0x08020000, v1.0）
+  - 测试2：`AA 55 10 04 01 02 03 04 <crc>` → 原样回发 echo
+- ✅ 编译：app.uvprojx（stm32f429 A 槽）0 错 0 警；boot.uvprojx 0 错 0 警；app_b 中本次改动文件全部编译通过
+- ✅ 调试日志确认全链路：ISR 收字节(isr 计数) → RX 任务 → 拼包 → 回调 → TX 发送
+
+**关键设计**：
+- ISR 直入 FreeRTOS 字节队列（替换原 64B 环形缓冲），对齐 CAN 架构
+- `len==0` 帧立即回调（兼容 PC 旧查询指令 `[AA 55 01 00]` 无 CRC）；`len>0` 严格 CRC16(poly 0x1021) 校验
+- UART_TX 用临界区发送，与 printf(fputc) 对 USART1 互斥
+- 查询业务通过强符号覆盖 `ModCommUart_OnRxPacket`，不直接碰串口
+
+**已清理**：
+- ✅ 验证通过后已移除全部调试日志（逐字节 `LOG_D`、100ms 轮询诊断分支、回调入口 `LOG_I`），保留 `uart_rx_isr_cnt` 诊断计数 + Init 返回值检查 + CRC mismatch 警告（均为合理防御），最终固件编译 0 错 0 警
 
 ---
 

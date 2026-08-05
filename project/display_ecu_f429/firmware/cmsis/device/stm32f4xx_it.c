@@ -9,6 +9,7 @@
 #include <stdio.h>
 #ifndef BOOTLOADER
 #include "mod_comm_can.h"
+#include "mod_comm_uart.h"
 #endif
 
 void NMI_Handler(void) {}
@@ -58,5 +59,13 @@ void Dump_Fault_Info(unsigned int *sp)
 void CAN1_RX0_IRQHandler(void)
 {
     Mod_Can_RxIRQHandler();
+}
+#endif
+
+/* ---- USART1 RXNE 接收中断（仅 App 使用） ---- */
+#ifndef BOOTLOADER
+void USART1_IRQHandler(void)
+{
+    Mod_Uart_RxIRQHandler();
 }
 #endif
