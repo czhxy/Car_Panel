@@ -179,9 +179,9 @@ static inline uint32_t CanProto_MakeId(uint8_t prio, uint8_t src, uint8_t dst,
 /* ================================================================
  * 电机控制帧数据载荷结构（mode_id=0x020，显示域→动力域）
  * ⚠ 注意：此结构体仅供参考，与显示域实际线序【不一致】，收发请按裸字节处理！
- *   显示域 task_comm_can_protocol.c 实际发送线序(小端)：
- *     data[0..1] = speed_enc(rpm×10)  data[2..3] = angle_enc(°×10)
- *     data[4..6] = 0                  data[7]    = 0x03(魔数)
+ *   显示域 CanProtocol_WheelCtlSend() 实际发送线序(小端)：
+ *     data[0..1] = speed_enc(rpm×10)  data[2..3] = angle_enc(°×10，当前填 0)
+ *     data[4..7] = 0
  *   即 byte2-3 在线上是 angle，不是本结构体里的 motor_current，且【无电流字段】。
  * ================================================================ */
 typedef struct {

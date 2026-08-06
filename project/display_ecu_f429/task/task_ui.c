@@ -12,8 +12,8 @@
  * 导致"绿色常亮不闪烁"）。改用 LVGL 原生控件——红/绿圆点(lv_obj)
  * + "CAN" 文本框(lv_label)，在线绿色闪烁 / 离线红色常亮。
  *
- * RPM 显示：由底部 Load Bar 拖动条控制（0–100 → 0–300 RPM，×3），
- * 显示 g_dash_state.rpm_target。拖动条只更新数据源 rpm_target，
+ * RPM 显示：显示动力域回传实测 rpm（CAN 状态帧 0x110 上报，×10 解码）。
+ * Load Bar 拖动条只更新目标值 rpm_target（0–100 → 0–300 RPM，×3），
  * CAN 周期帧 CanProtocol_WheelCtlSend() 读取并以 ×10 编码发送。
  *
  * Pause 按钮：仪表盘与 Load Bar 之间的红色圆角矩形，一键暂停/恢复。
@@ -570,11 +570,11 @@ void Dashboard_Update(void)
     }
 
     /* ---- RPM 数值 ----
-     * 暂以拖动条值 rpm_target 显示（0–100 ×3 → 0–300 RPM）。
-     * 后续改为显示动力域实测 rpm（CAN 状态帧 0x110 上报）。 */
+     * 显示动力域回传实测 rpm（CAN 状态帧 0x110 上报，×10 解码后为 RPM）。
+     * 未收到状态帧前为初始占位值；拖动条只改目标值 rpm_target 不影响此显示。 */
     if (s_rpm_label != NULL) {
         char buf[8];
-        snprintf(buf, sizeof(buf), "%u", snap.rpm_target);
+        snprintf(buf, sizeof(buf), "%u", snap.rpm);
         lv_label_set_text(s_rpm_label, buf);
     }
 

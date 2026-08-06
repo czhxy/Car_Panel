@@ -44,18 +44,9 @@ static void Motor_Can_Tx_Event(Motor_Struct *m, uint8_t func_field)
 
 void Task_Can_Motor_Updata(void)
 {
-	/* 20ms 周期、左右交替发送，防止挤占心跳帧 */
-	static uint8_t tick;
-	tick++;
-
-	if (tick & 1U)
-	{
-		/* 奇数周期：左电机状态帧 0x110, func=0x00 */
-		Motor_Can_Tx_Event(&motor_left, 0x00U);
-	}
-	else
-	{
-		/* 偶数周期：右电机状态帧 0x110, func=0x01 */
-		Motor_Can_Tx_Event(&motor_right, 0x01U);
-	}
+	/* 当前只有左电机接好：只发左电机状态帧 0x110, func=0x00。
+	 * 原"左右交替发送"会因右电机未接线(转速恒 0)把显示域 rpm 覆盖为 0，
+	 * 且显示域暂不区分 func=0x00/0x01。右电机接好后再恢复交替，
+	 * 并让显示域按 func 字段区分左右。 */
+	Motor_Can_Tx_Event(&motor_left, 0x00U);
 }

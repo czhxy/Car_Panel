@@ -600,16 +600,6 @@
               <FilePath>..\task\task_ui.h</FilePath>
             </File>
             <File>
-              <FileName>task_vofa.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\task\task_vofa.c</FilePath>
-            </File>
-            <File>
-              <FileName>task_vofa.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>..\task\task_vofa.h</FilePath>
-            </File>
-            <File>
               <FileName>task_comm_can.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\task\task_comm_can.c</FilePath>
@@ -668,16 +658,6 @@
               <FileName>usart.h</FileName>
               <FileType>5</FileType>
               <FilePath>..\driver\usart.h</FilePath>
-            </File>
-            <File>
-              <FileName>usart6.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\driver\usart6.c</FilePath>
-            </File>
-            <File>
-              <FileName>usart6.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>..\driver\usart6.h</FilePath>
             </File>
           </Files>
         </Group>
@@ -2063,16 +2043,6 @@
               <FilePath>..\task\task_ui.h</FilePath>
             </File>
             <File>
-              <FileName>task_vofa.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\task\task_vofa.c</FilePath>
-            </File>
-            <File>
-              <FileName>task_vofa.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>..\task\task_vofa.h</FilePath>
-            </File>
-            <File>
               <FileName>task_comm_can.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\task\task_comm_can.c</FilePath>
@@ -2131,16 +2101,6 @@
               <FileName>usart.h</FileName>
               <FileType>5</FileType>
               <FilePath>..\driver\usart.h</FilePath>
-            </File>
-            <File>
-              <FileName>usart6.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\driver\usart6.c</FilePath>
-            </File>
-            <File>
-              <FileName>usart6.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>..\driver\usart6.h</FilePath>
             </File>
           </Files>
         </Group>

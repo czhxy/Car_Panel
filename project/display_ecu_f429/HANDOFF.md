@@ -12,7 +12,7 @@
 | OTA 参数管理 | 100% | `bootloader/ota_params.c` | Sector 4，append-only 日志，1024 槽 × 64B，掉电安全 |
 | FreeRTOS 集成 | 100% | `third_lib/FreeRTOS` | v11.3.0，heap_4 @ CCM，8 任务运行 |
 | CAN 通信框架 | 100% | `task/mod_comm_can.c/h` | TX/RX 双 FreeRTOS 队列，ISR 接收，心跳，测试帧 |
-| CAN 协议层 | 90% | `task/task_comm_can_protocol.c/h`, `protocol/CAN_Protocol.h` | ID 编解码完成，电机控制帧周期发送，调试查询占位 |
+| CAN 协议层 | 100% | `mod/mod_can_protocol.c/h`, `protocol/CAN_Protocol.h` | ID 编解码 + 电机控制帧周期发送；与动力域协议已对齐（0x110 真实线序、心跳 0x320、控制帧无魔数） |
 | 串口日志 | 100% | `app/bsp_log.h`, `driver/usart.c/h` | printf 重定向，`LOG_E/W/I/D` 宏，纯硬件原语（App 无 ISR/环形缓冲，USART1 ISR 在 stm32f4xx_it.c） |
 | UART 通信框架 | **100%** | `task/mod_comm_uart.c/h` | 仿 CAN：字节队列(256) + TX 包队列(8) + `UART_TX`/`UART_RX` 双任务 + 弱符号回调，0xAA 0x55 拼包/组包/CRC16，环路验证 2/2 PASS |
 | 按键驱动 | 100% | `app/bsp_key.c/h` | 20ms 扫描，上升沿检测，FreeRTOS 信号量通知 |
@@ -23,9 +23,9 @@
 | GUI 绘图库 | **100%** | `task/mod_gui.c/h` | 点/线/圆/矩形/三角形/字符/图片绘制（LVGL 接管后保留备用） |
 | LCD 演示与触摸测试 | **100%** | `task/mod_test.c/h` | 10 项综合测试 + 触摸坐标验证（LVGL 接管后保留备用） |
 | **LVGL 移植与 Demo** | **100%** | `third_lib/LVGL/` + `task/task_lcd_demo.c` | v8.3.11，DMA2D GPU 加速，双缓冲，Widgets Demo 跑通 |
-| 电机传感器驱动 | 5% | `driver/mod_motor.c/h` | 仅占位函数（返回 0.0f） |
-| **LVGL 仪表盘 UI** | **96%** | `task/task_dashboard_ui.c/h` + `task/mod_dashboard_data.c/h` | 已替换仪表盘资源、隐藏指定图标和错误码；RPM 表盘由拖动条控制（0–100 ×3 → 0–300），拖动保留 CAN 下发；**移除 Top Bar 图片**，CAN 指示灯改用 LVGL 原生控件（6×6 红/绿圆点 + lv_label 文本框，**始终闪烁**：在线绿 / 离线红，500ms 周期）；**隐藏 0/50/100 刻度数字**；新增**红色 PAUSE 一键暂停按钮**（切换式：暂停归 0 锁滑块 / 恢复原值） |
-| VOFA+ 调试输出（临时） | **调试用** | `task/task_vofa.c/h` + `driver/usart6.c/h` | USART6 (PC6/PC7) 每 100ms 输出 rpm_target，firewater ASCII 格式；测试完成后整段移除（`VOFA_DEBUG` 开关） |
+| 电机传感器驱动 | 100% | `mod/mod_motor.c/h` | `Mod_Motor_Get_Speed()` 返回 `g_dash_state.rpm_target`（目标转速），作控制帧速度源 |
+| **LVGL 仪表盘 UI** | **96%** | `task/task_dashboard_ui.c/h` + `task/mod_dashboard_data.c/h` | 已替换仪表盘资源、隐藏指定图标和错误码；RPM 表盘显示动力域回传实测转速（0x110 状态帧 ×10 解码），拖动条仍下发目标值；**移除 Top Bar 图片**，CAN 指示灯改用 LVGL 原生控件（6×6 红/绿圆点 + lv_label 文本框，**始终闪烁**：在线绿 / 离线红，500ms 周期）；**隐藏 0/50/100 刻度数字**；新增**红色 PAUSE 一键暂停按钮**（切换式：暂停归 0 锁滑块 / 恢复原值） |
+| ~~VOFA+ 调试输出（临时）~~ | **已清理** | ~~`task/task_vofa.c/h` + `driver/usart6.c/h`~~ | 已删除：源码（4 文件）+ `task_entry.c` 引用 + 两个 Keil 工程引用全部移除（2026-08-07） |
 
 ---
 
@@ -82,25 +82,26 @@ task/
 
 ### 本次新增 — LVGL 仪表盘改进 + VOFA 调试（2026-08-05）
 
+> **⚠️ VOFA 临时代码已于 2026-08-07 全部清理**（见下方"本次已完成 — VOFA 清理 + app_b 编译修复"），以下仅作历史记录。
+
 ```
 task/
-  task_vofa.h           VOFA 调试总开关 VOFA_DEBUG + Vofa_Task 声明
-  task_vofa.c           Vofa_Task：每 100ms 读 g_dash_state.rpm_target，
+  task_vofa.h           [已删除] VOFA 调试总开关 VOFA_DEBUG + Vofa_Task 声明
+  task_vofa.c           [已删除] Vofa_Task：每 100ms 读 g_dash_state.rpm_target，
                         USART6 以 firewater ASCII 格式发送 "%u\r\n"（临时，测试后删）
 
 driver/
-  usart6.h              USART6 发送原语声明
-  usart6.c              USART6 (PC6/PC7, AF8, APB2, 115200) 初始化 + SendByte/SendString
+  usart6.h              [已删除] USART6 发送原语声明
+  usart6.c              [已删除] USART6 (PC6/PC7, AF8, APB2, 115200) 初始化 + SendByte/SendString
                         仅发送无接收，专供 VOFA+（临时，测试后删）
 ```
 
 **配合修改**：
 - `task/task_dashboard_ui.c`：
   - **移除 Top Bar 图片，CAN 指示灯改用 LVGL 原生控件**：不再创建 `img_top_bar` 背景图（其内嵌静态状态点无论遮挡还是对齐都不可靠，曾导致"绿色常亮不闪烁"）。改为 6×6 圆形 `lv_obj`（在线绿色闪烁 / 离线红色常亮，直接改 `bg_color`/`bg_opa`）+ `lv_label` "CAN" 文本框，完全不依赖图片像素
-  - **RPM 由拖动条控制**：表盘数值改显示 `snap.rpm_target`（0–100 ×3 → 0–300），不再显示 CAN 实测 `snap.rpm`；`on_load_change` 保留 CAN 目标转速下发
+  - **RPM 由拖动条控制**（**注意：后续 2026-08-06 已改回显示 CAN 实测 rpm**）：表盘数值改显示 `snap.rpm_target`（0–100 ×3 → 0–300），不再显示 CAN 实测 `snap.rpm`；`on_load_change` 保留 CAN 目标转速下发
   - **隐藏刻度 + PAUSE 一键暂停**：注释掉 0/50/100 三个刻度 `lv_label`；仪表盘与 Load Bar 间新增红色圆角矩形按钮（80×30, y=200），切换式暂停——按下 rpm_target 归 0、滑块回 0 并锁定、发 CAN 0 帧，再按恢复暂停前值。`DashboardState` 新增 `paused` 标志，抽取 `send_rpm_target()` 公共下发函数
-- `task/task_entry.c`：`#if VOFA_DEBUG` 条件创建 `VOFA` 任务（256 字, prio 4）
-- `mdk/app.uvprojx`（2 Target）+ `app_b.uvprojx`：task 组新增 `task_vofa.c/h`，driver 组新增 `usart6.c/h`
+- `task/task_entry.c`：`#if VOFA_DEBUG` 条件创建 `VOFA` 任务（256 字, prio 4）→ **已删除该引用**
 
 ### 历史新增（上次）
 
@@ -159,9 +160,7 @@ y=312  Warning Dots (208×8)       ← flex row, 6 个 8×8 圆点
 │    → ModCommCan_OnRxFrame() [强符号]                        │
 │       ├ 心跳帧 (0x320):    → g_dash_state.error_code        │
 │       │                      → g_dash_state.motor_online    │
-│       └ 电机状态 (0x110):  → g_dash_state.rpm               │
-│                            → g_dash_state.odo_value          │
-│                            → g_dash_state.motor_status       │
+│       └ 电机状态 (0x110):  → g_dash_state.rpm（CanStatusMotor 线序，实测×10 解码）│
 │                                                            │
 │  CAN_Test_Task (prio 4):                                   │
 │    → 等待 xKey1Sem → Mod_Can_TxTest()                       │
@@ -185,16 +184,12 @@ y=312  Warning Dots (208×8)       ← flex row, 6 个 8×8 圆点
 │    → Dashboard_UI_Init(scr) 启动时一次性构建                  │
 │    → Dashboard_Update() 每 25ms:                            │
 │       Dashboard_Data_GetSnapshot() → 读共享状态              │
-│       ├ RPM 数值刷新 ← rpm_target（拖动条控制）              │
+│       ├ RPM 数值刷新 ← rpm 实测值（0x110 上报，×10 解码）    │
 │       ├ 错误框颜色切换 (红/绿)                               │
 │       ├ CAN 指示灯: 在线绿闪(500ms) / 离线红常亮              │
 │       ├ 心跳超时检测 (1.5s)                                 │
 │       ├ 卡片选择器高亮                                      │
 │       └ 警示灯状态更新                                      │
-│                                                            │
-│  VOFA (prio 4, 100ms):  [VOFA_DEBUG 临时]                  │
-│    → 读 g_dash_state.rpm_target                            │
-│    → USART6 firewater ASCII: "%u\r\n"                      │
 │                                                            │
 │  Heartbeat_Task (prio 1, 500ms):                            │
 │    → LED 翻转 + Can_Heartbeat() → Mod_Can_TxEvent()         │
@@ -205,7 +200,7 @@ y=312  Warning Dots (208×8)       ← flex row, 6 个 8×8 圆点
 │   Load Bar 交互 → g_dash_state.rpm_target 变化              │
 │     → CanProto_SendFrame() → CAN TX 队列                    │
 │     → CAN 总线 → 动力域 ECU 接收                            │
-│   格式: [speed_L, speed_H, 0, 0, 0, 0, 0, 3]               │
+│   格式: [speed_L, speed_H, 0, 0, 0, 0, 0, 0]  (×10 编码)   │
 └────────────────────────────────────────────────────────────┘
 ```
 
@@ -233,7 +228,6 @@ HEARTBEAT (512, prio 1)
 UART_TX (256, prio 4)
 UART_RX (256, prio 4)
 LCD_DEMO (1024, prio 3)  ← 栈 1024 字 = 4KB，LVGL 渲染开销
-VOFA (256, prio 4)       ← [VOFA_DEBUG] USART6 firewater 输出（临时）
 ```
 
 ## 仪表盘线程安全设计
@@ -386,10 +380,11 @@ CAN_RX Task (prio 4)             LCD_DEMO Task (prio 3)
 ## 当前编译状态
 
 - **App 工程**：`mdk/app.uvprojx`，双 Target（stm32f429 / stm32f429_b），armcc V5.06, C99
+- **独立 B 槽工程**：`mdk/app_b.uvprojx`，单 Target（stm32f429_b），与 app.uvprojx 的 B 槽 Target 配置完全一致
 - **Bootloader 工程**：`mdk/boot.uvprojx`，独立编译
 - **LVGL 源文件**：118 个 `.c` 文件通过 12 个 Keil 分组管理（新增加 lv_font_montserrat_28.c）
-- **本工程新增源文件**：`dashboard_images.c`、`mod_dashboard_data.c`、`mod_dashboard_fault.c`、`task_dashboard_ui.c`、`mod_comm_uart.c`、`usart6.c`、`task_vofa.c`
-- **注意（既有问题）**：`app_b.uvprojx` 未配置 LVGL include path（`..\third_lib\LVGL\lvgl` 等），编译 `task_dashboard_ui.h` 报 `lvgl.h` 找不到。本次新增文件（`usart6.c`/`task_vofa.c`）在 app_b 编译通过，该错误与本次改动无关；如需 A/B 双槽完整编译需补 LVGL 路径（另 app_b 还缺 `mod_dashboard_data`/`task_dashboard_ui` 等 dashboard 文件条目，属既有未完成状态）
+- **本工程新增源文件**：`dashboard_images.c`、`mod_dashboard_data.c`、`mod_dashboard_fault.c`、`task_dashboard_ui.c`、`mod_comm_uart.c`（VOFA 临时文件 `usart6.c`/`task_vofa.c` 已删除）
+- **编译状态**：✅ app.uvprojx（A/B 双 Target）与 app_b.uvprojx 均编译通过，`0 Error`（第三方 LVGL/FreeRTOS 库警告为既有、非致命）；A 槽链接 `0x08020000`，B 槽链接 `0x08080000`（app_b.sct），hex/bin 均已生成
 - **Keil 编译器 Define**：`STM32F429_439xx,USE_STDPERIPH_DRIVER,LV_LVGL_H_INCLUDE_SIMPLE,LV_CONF_INCLUDE_SIMPLE`（B 槽额外 `APP_SLOT_B`）
 - **Include Paths**：新增 `..\pic` 路径（包含 `..\bootloader;..\pic;..\third_lib\LVGL\lvgl;..\third_lib\LVGL\lvgl\examples\porting` 等）
 - App A 槽 → 0x08020000，App B 槽 → 0x08080000
@@ -420,6 +415,25 @@ CAN_RX Task (prio 4)             LCD_DEMO Task (prio 3)
 
 ---
 
+## 本次已完成 — CAN 协议一致性对齐 + 表盘实测 RPM（2026-08-06，双 ECU 联调验证通过）
+
+**目标**：审查显示域(F429)与动力域(F103)的 CAN 通信协议一致性并修复发现的不一致。
+
+**发现并修复的问题**：
+1. **0x110 状态帧载荷两端不一致（严重）**：动力域按 `CanStatusMotor` 真实线序发送 `[speed×10, current, angle, status, temp]`，显示域却按不存在的 `[rpm, status, odo]` 布局解析 → 显示域改为按 `CanStatusMotor` 线序解析，只取 rpm（实测×10 解码），`motor_status`/`odo_value` 暂置 0
+2. **显示域自心跳 ID/载荷漂移**：原 `CAN_HEARTBEAT_ID`(mode=0x000) 与协议(0x320) 不符 → 改为 `0x320` + `CanHeartbeatData`，删除 `CAN_HEARTBEAT_ID` 宏
+3. **控制帧魔数**：显示域发送 `data[7]=3` → 移除，控制帧线序干净；两端 `CanCtrlMotor` 注释统一
+4. **动力域左右交替状态帧**：右电机未接线（转速恒 0），交替发送会覆盖显示域 rpm → 动力域改为只发左电机状态帧(0x110, func=0x00)，右电机接线后恢复交替
+5. **表盘 RPM 显示真实值**：`task_ui.c` 表盘数值从 `rpm_target`（拖动条）改为显示 `rpm`（0x110 实测）
+
+**修改文件**：
+- 显示域：`protocol/CAN_Protocol.h`（新增 `CanStatusMotor`、删 `CAN_HEARTBEAT_ID`）、`mod/mod_comm_can.c`（0x110 解析 + 心跳）、`mod/mod_can_protocol.c`（去魔数）、`task/task_ui.c`（RPM 实测）
+- 动力域：`task/task_motor_ctl.c`（只发左电机）、`protocol/CAN_Protocol.h`（注释统一）、`HANDOFF.md`/`CLAUDE.md`（帧表同步）
+
+**验证**：显示域 app.uvprojx（stm32f429 A 槽）0 Error 0 Warning；动力域 Project.uvprojx 0 Error 0 Warning；双 ECU 真机联调通过（表盘 RPM 显示动力域回传真实转速）
+
+---
+
 ## 本次已完成 — LVGL 暂停按钮 + 隐藏刻度数字（2026-08-06）
 
 **目标**：① 注释掉滑动条上方 0/50/100 三个刻度数字；② 在滑动条和仪表盘之间新增红色圆角矩形的"一键暂停"按钮。
@@ -436,6 +450,26 @@ CAN_RX Task (prio 4)             LCD_DEMO Task (prio 3)
 - 抽取 `send_rpm_target()` 公共函数，`on_load_change` / `on_pause_click` 共用 CAN 下发
 
 **验证**：app.uvprojx（stm32f429 A 槽）编译 **0 Error 0 Warning**
+
+---
+
+## 本次已完成 — VOFA 清理 + app_b 编译修复（2026-08-07）
+
+**目标**：① 清理 VOFA+ 临时调试代码（VOFA+ 波形验证已于 2026-08-06 完成）；② 完善 `app_b.uvprojx` 的 B 槽编译。**其他功能代码不动。**
+
+**① VOFA 临时代码清理**
+- 删除源码 4 文件：`task/task_vofa.c/h`、`driver/usart6.c/h`
+- `task/task_entry.c`：移除 `#include "task_vofa.h"` 和 `#if VOFA_DEBUG ... #endif` 任务创建块
+- `mdk/app.uvprojx`（2 Target）与 `mdk/app_b.uvprojx`：移除 task_vofa/usart6 的全部 `<File>` 引用
+
+**② app_b.uvprojx 编译完善**
+- **问题**：app_b.uvprojx 是残缺的 B 槽单 Target 工程——只有 11 个分组/70 个文件，缺全部 11 个 LVGL 分组（约 118 文件）、`pic` 组（dashboard_images.c/h），Define 缺 `LV_LVGL_H_INCLUDE_SIMPLE,LV_CONF_INCLUDE_SIMPLE` 两个宏
+- **方案**：`app.uvprojx` 的 `stm32f429_b` Target 本身是完整正确的 B 槽配置 → 用它的完整 `<Target>` 块整体替换 `app_b.uvprojx` 的残缺块。替换后 app_b 与 app.uvprojx B 槽 Target 完全一致（23 分组 / 191 文件 / Define 含 LVGL 宏 + `APP_SLOT_B` / scatter=app_b.sct / OutputName=app_b）
+
+**验证**：
+- ✅ `app.uvprojx`（stm32f429 A 槽）：**0 Error, 24 Warning**（LVGL/FreeRTOS 第三方库 + task_ui.c 未用变量，非致命）
+- ✅ `app_b.uvprojx`（stm32f429_b B 槽）：**0 Error, 24 Warning**，生成 `app_b.bin`（341KB）
+- ✅ 链接地址核验：app.hex 复位向量 `0x08020281`（A 槽）、app_b.hex 复位向量 `0x08080281`（B 槽），scatter 分别指向 `0x08020000` / `0x08080000`
 
 ---
 
@@ -458,7 +492,7 @@ CAN_RX Task (prio 4)             LCD_DEMO Task (prio 3)
 - USART6 与 USART1（日志 + 查询协议）完全隔离，波形干净
 - **临时**：`VOFA_DEBUG` 开关（task_vofa.h），测试完成后置 0 或整段删除（usart6.c/h、task_vofa.c/h、task_entry 引用、mdk 工程引用）
 
-**验证**：app.uvprojx（stm32f429 A 槽）编译 **0 Error 0 Warning**；app_b 仅报既有 `lvgl.h` 缺失问题，未引入新错误
+**验证**：app.uvprojx（stm32f429 A 槽）编译 **0 Error 0 Warning**；app_b 仅报既有 `lvgl.h` 缺失问题，未引入新错误（该 app_b 问题已于 2026-08-07 修复，见上文）
 
 ---
 
@@ -468,23 +502,23 @@ CAN_RX Task (prio 4)             LCD_DEMO Task (prio 3)
 
 - [x] Keil 编译 0 error 0 warning 验证（`stm32f429` A 槽）
 - [x] 移除 Top Bar 图片，CAN 指示灯改用 LVGL 原生圆点 + 文本框
-- [ ] 烧录测试：LCD 显示仪表盘全貌，确认 CAN 指示灯**红色闪烁**（无心跳，始终闪）
-- [ ] 接动力域心跳后验证 CAN 指示灯变**绿色闪烁**（颜色切换正常）
-- [ ] 验证 Load Bar 交互 → CAN TX 帧发送 + 表盘 RPM 实时变化
-- [ ] VOFA+ 接 USART6 (PC6/PC7) 验证 RPM 波形（100ms 间隔，firewater ASCII）
-- [ ] 烧录测试：PAUSE 按钮 → 表盘/VOFA/CAN 帧归 0、滑块锁定；再按恢复暂停前值
+- [x] 烧录测试：LCD 显示仪表盘全貌，确认 CAN 指示灯**红色闪烁**（无心跳，始终闪）
+- [x] 接动力域心跳后验证 CAN 指示灯变**绿色闪烁**（颜色切换正常）
+- [x] 验证 Load Bar 交互 → CAN TX 帧发送 + 表盘 RPM 实时变化
+- [x] VOFA+ 接 USART6 (PC6/PC7) 验证 RPM 波形（100ms 间隔，firewater ASCII）
+- [x] 烧录测试：PAUSE 按钮 → 表盘/VOFA/CAN 帧归 0、滑块锁定；再按恢复暂停前值
 
-### P2 — 动力域 CAN 协议帧补齐
+### P2 — 动力域 CAN 协议帧对齐 ✅ 已完成（2026-08-06）
 
-当前 `MOD_ID_STATUS_MOTOR(0x110)` 帧格式为显示域预设，需要对齐动力域实现：
-- 确认动力域上报的电机状态帧格式（rpm、odo、status 字段）
-- 心跳帧格式已定义，待动力域开始发送后联调
+- 0x110 电机状态帧已按动力域 `CanStatusMotor` 真实线序解析（只取 rpm，其余暂置 0，不区分左右）
+- 显示域自心跳统一为 `0x320` + `CanHeartbeatData`
+- 移除控制帧 `data[7]=3` 魔数，控制帧线序 `[speed×10, angle, 0...]` 与动力域文档一致
 
-### P3 — 电机传感器真实数据接入
+### P3 — 电机传感器真实数据接入 ✅ 已实现（2026-08-06）
 
-将 `driver/mod_motor.c` 的占位函数替换为实际实现：
-- 当前 `Mod_Motor_Get_Speed()` 和 `Mod_Motor_Angle()` 均硬编码返回 0.0f
-- 需要对接真实传感器数据源（通过 CAN 从动力域获取后写入）
+- `Mod_Motor_Get_Speed()` 返回 `g_dash_state.rpm_target`（拖动条目标转速），作为控制帧速度源
+- `Mod_Motor_Angle()` 已移除（控制帧角度字段直接填 0）
+- 动力域实测转速经 0x110 写入 `g_dash_state.rpm`，表盘直接显示
 
 ### P4 — CAN 滤波器细化（`app/bsp_can.c`）
 
