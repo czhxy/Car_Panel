@@ -62,12 +62,12 @@
 ```
 应用层 → ModCanFrame → Mod_Can_TxEvent() → TX 队列
                                             ↓
-                                     ModCommCan_Tx() 出队
+                                     ModCommCan_Tx() 发送成功才出队
                                             ↓
                                   CanTxMsg → CAN_Transmit()
 ```
-- `ModCommCan_Tx()` 非阻塞消费，邮箱满则**回灌队首** break
-- RX 路径：CAN FIFO0 中断 → `Mod_Can_RxIRQHandler()` → RX 队列 → `Mod_Can_RxTask()` → 弱符号 `ModCommCan_OnRxFrame()`
+- `ModCommCan_Tx()` 用 `xQueuePeek` 查看队首、发送成功才 `xQueueReceive` 出队；邮箱满时帧留在队首并 break，下一轮再试（无回灌，不丢帧、不乱序）
+- RX 路径：CAN FIFO0 中断 → `Mod_Can_RxIRQHandler()` → RX 队列 → `Task_CanRx()` → 强符号 `ModCommCan_OnRxFrame()`
 
 ## 工程结构
 

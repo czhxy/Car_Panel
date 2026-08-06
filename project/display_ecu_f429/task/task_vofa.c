@@ -9,7 +9,7 @@
  */
 
 #include "task_vofa.h"
-#include "mod_dashboard_data.h"
+#include "mod_ui.h"
 #include "usart6.h"
 #include "FreeRTOS.h"
 #include "task.h"

@@ -1,5 +1,5 @@
 #include "mod_motor.h"
-#include "mod_dashboard_data.h"
+#include "mod_ui.h"
 
 /* Mod_Motor_Get_Speed: 返回 LVGL 仪表盘当前目标转速 (rpm_target)，与表盘显示一致。
  * 上层 CanProtocol_WheelCtlSend 会将值 *10 后按 int16 编码进控制帧。

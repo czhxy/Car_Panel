@@ -1,8 +1,12 @@
-/* task_dashboard_ui.c — 仪表盘 UI 构建 + 周期更新
+/* task_ui.c — 显示域 UI 任务
+ *
+ * 顶层与显示屏相关的任务统一放在本文件（合并自 task_lcd_demo + task_dashboard_ui）：
+ *   - Task_UI()：LVGL 主循环任务（初始化 LVGL/显示/触摸驱动 + lv_timer_handler 渲染）
+ *   - Dashboard_UI_Init()：一次性构建仪表盘所有静态元素
+ *   - Dashboard_Update()：每 25ms 从共享状态（mod_ui）刷新动态元素
  *
  * 将 Figma 设计的 240×320 汽车仪表盘用 LVGL v8.3 控件实现。
- * Dashboard_UI_Init() 一次性构建所有静态元素，
- * Dashboard_Update() 每 25ms 从 g_dash_state 读取数据并刷新动态元素。
+ * 数据源为 mod_ui 的 DashboardState（g_dash_state）。
  *
  * CAN 指示灯：不再使用 Top Bar 背景图（其内嵌静态状态点无法受控，
  * 导致"绿色常亮不闪烁"）。改用 LVGL 原生控件——红/绿圆点(lv_obj)
@@ -16,11 +20,15 @@
  * 暂停时 rpm_target 归 0、滑块回 0 并锁定，恢复时回到暂停前位置。
  */
 
-#include "task_dashboard_ui.h"
-#include "mod_dashboard_data.h"
-#include "mod_dashboard_fault.h"
+#include "task_ui.h"
+#include "mod_ui.h"
 #include "dashboard_images.h"
 #include "bsp_log.h"
+#include "lvgl.h"
+#include "lv_port_disp.h"
+#include "lv_port_indev.h"
+#include "FreeRTOS.h"
+#include "task.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -277,18 +285,10 @@ void Dashboard_UI_Init(lv_obj_t *scr)
      *      - "CAN" 文本: lv_label 文本框
      *    全部由 Dashboard_Update 驱动，不依赖任何图片像素。
      * ======================================================== */
-    s_can_led = lv_obj_create(scr);
-    lv_obj_set_size(s_can_led, 6, 6);
-    lv_obj_set_pos(s_can_led, 89, 13);   /* 原 Top Bar 内置状态点位置 */
-    lv_obj_set_style_bg_color(s_can_led, COLOR_ERROR_RED, 0);
-    lv_obj_set_style_bg_opa(s_can_led, LV_OPA_COVER, 0);
-    lv_obj_set_style_radius(s_can_led, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_border_width(s_can_led, 0, 0);
-    lv_obj_clear_flag(s_can_led, LV_OBJ_FLAG_SCROLLABLE);
+    s_can_led = Mod_UI_Box(scr, 89, 13, 6, 6, COLOR_ERROR_RED, LV_RADIUS_CIRCLE);
+    /* 原 Top Bar 内置状态点位置 */
 
-    lv_obj_t *can_label = lv_label_create(scr);
-    lv_obj_set_style_text_color(can_label, lv_color_white(), 0);
-    lv_label_set_text(can_label, "CAN");
+    lv_obj_t *can_label = Mod_UI_Label(scr, 0, 0, "CAN", lv_color_white(), NULL);
     lv_obj_align_to(can_label, s_can_led, LV_ALIGN_OUT_RIGHT_MID, 4, 0);
 
     /* ========================================================
@@ -367,10 +367,7 @@ void Dashboard_UI_Init(lv_obj_t *scr)
     lv_obj_align(arc_fill_img, LV_ALIGN_CENTER, 0, 0);
 
     /* RPM 数值 ("6800", Montserrat 28) */
-    s_rpm_label = lv_label_create(gauge_cont);
-    lv_obj_set_style_text_color(s_rpm_label, lv_color_white(), 0);
-    lv_obj_set_style_text_font(s_rpm_label, &lv_font_montserrat_28, 0);
-    lv_label_set_text(s_rpm_label, "0");
+    s_rpm_label = Mod_UI_Label(gauge_cont, 0, -4, "0", lv_color_white(), &lv_font_montserrat_28);
     lv_obj_align(s_rpm_label, LV_ALIGN_CENTER, 0, -4);
 
     /* RPM 单位 ("RPM") */
@@ -596,4 +593,54 @@ void Dashboard_Update(void)
     }
 
     /* ---- 警示灯: 电池 (索引3) 始终点亮 ---- */
+}
+
+/* ============================================================
+ * Task_UI — LVGL 仪表盘 UI 任务（原 Task_LCD_Demo）
+ * 初始化 LVGL 图形库并运行仪表盘界面
+ * 栈: 1024 字 = 4KB (LVGL 渲染开销)
+ * 优先级: 3
+ * ============================================================ */
+void Task_UI(void *pvParameters)
+{
+    (void)pvParameters;
+
+    LOG_I("[LVGL] Initializing LVGL v%d.%d.%d...\r\n",
+          lv_version_major(), lv_version_minor(), lv_version_patch());
+
+    /* LVGL 核心初始化 */
+    lv_init();
+
+    /* 显示驱动 (ILI9341 SPI) */
+    lv_port_disp_init();
+    LOG_I("[LVGL] Display driver initialized\r\n");
+
+    /* 触摸输入 (FT6336G I2C) */
+    lv_port_indev_init();
+    LOG_I("[LVGL] Input device initialized\r\n");
+
+    /* 构建仪表盘 UI (替换原 lv_demo_widgets) */
+    Dashboard_UI_Init(lv_scr_act());
+    LOG_I("[LVGL] Dashboard UI started\r\n");
+
+    /* 主循环: 每 5ms 更新 LVGL tick + 处理渲染
+     * 每 25ms 调用 Dashboard_Update 刷新动态元素 */
+    TickType_t last_tick = xTaskGetTickCount();
+    uint32_t loop_cnt = 0;
+    while (1)
+    {
+        TickType_t now = xTaskGetTickCount();
+        lv_tick_inc((uint32_t)(now - last_tick));
+        last_tick = now;
+
+        lv_timer_handler();
+
+        /* 每 5 次循环 (25ms) 更新仪表盘数据 */
+        if ((loop_cnt % 5) == 0) {
+            Dashboard_Update();
+        }
+        loop_cnt++;
+
+        vTaskDelay(pdMS_TO_TICKS(5));
+    }
 }

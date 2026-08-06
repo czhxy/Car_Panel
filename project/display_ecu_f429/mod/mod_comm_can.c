@@ -1,10 +1,7 @@
 #include "mod_comm_can.h"
-#include "mod_dashboard_data.h"
-#include "task_comm_can_protocol.h"
+#include "mod_ui.h"
 #include "bsp_can.h"
-#include "bsp_key.h"
 #include "bsp_log.h"
-#include "semphr.h"
 #include <string.h>
 #include "task.h"
 
@@ -19,8 +16,8 @@
 #endif
 
 /* ---- 静态变量 ---- */
-static QueueHandle_t CanTxQueue = NULL;
-static QueueHandle_t CanRxQueue = NULL;
+static QueueHandle_t CanTxQueue = NULL;   /* TX FIFO 队列（与 RX 对称，深度 64） */
+static QueueHandle_t CanRxQueue = NULL;   /* RX FIFO 队列（ISR 推入，RX 任务消费） */
 
 static struct {
     uint8_t tx_err_count;
@@ -45,6 +42,7 @@ void Mod_Can_Init(void)
 
 /* ============================================================
  * Mod_Can_TxEvent — 非阻塞入 TX 队列
+ * 队列满时返回 false 并累计 tx_err_count（有界队列的正常背压行为）
  * ============================================================ */
 bool Mod_Can_TxEvent(const ModCanFrame *frame)
 {
@@ -74,6 +72,17 @@ void Mod_Can_RxIRQHandler(void)
     }
 
     portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}
+
+/* ============================================================
+ * Mod_Can_RxDequeue — 从 RX 队列取一帧（供接收任务调用）
+ * timeout: portMAX_DELAY 阻塞等待 / 0 立即返回
+ * 返回: 是否成功取到一帧
+ * ============================================================ */
+bool Mod_Can_RxDequeue(CanRxMsg *msg, TickType_t timeout)
+{
+    if (CanRxQueue == NULL || msg == NULL) { return false; }
+    return (xQueueReceive(CanRxQueue, msg, timeout) == pdPASS);
 }
 
 /* ============================================================
@@ -181,69 +190,33 @@ void ModCommCan_OnRxFrame(const CanRxMsg *rx_msg)
 
 /* ============================================================
  * ModCommCan_Tx — 统一消费 TX 队列，提交硬件发送
- * 非阻塞取尽当前队列，每帧 ModCanFrame → CanTxMsg → CAN_Transmit；
- * 邮箱满则回灌队首并 break（本轮结束、下一轮再试），队列空立即返回。
+ * 用 xQueuePeek 而非"取出后回灌队首"：先看队首帧，发送成功才出队；
+ * 邮箱满则不取出、帧留在队首下一轮再试。相比回灌方案：
+ *   - 不存在 xQueueSendToFront 回灌失败导致的静默丢帧；
+ *   - 不存在回灌队首造成的乱序插队（旧帧插到新帧前面）。
+ * 队列空立即返回。
  * ============================================================ */
 void ModCommCan_Tx(void)
 {
     ModCanFrame frame;
-    while (xQueueReceive(CanTxQueue, &frame, 0) == pdPASS) {
+    while (xQueuePeek(CanTxQueue, &frame, 0) == pdPASS) {
         CanTxMsg tx_msg;
         memset(&tx_msg, 0, sizeof(tx_msg));
-        if (frame.ide == MOD_CAN_IDE_EXT) 
-				{ 
-					tx_msg.ExtId = frame.id & 0x1FFFFFFFU; tx_msg.IDE = CAN_ID_EXT; 
-				}
-        else                               
-				{ 
-					tx_msg.StdId = frame.id & 0x7FFU;       
-					tx_msg.IDE = CAN_ID_STD; 
-				}
+        if (frame.ide == MOD_CAN_IDE_EXT) {
+            tx_msg.ExtId = frame.id & 0x1FFFFFFFU;
+            tx_msg.IDE   = CAN_ID_EXT;
+        } else {
+            tx_msg.StdId = frame.id & 0x7FFU;
+            tx_msg.IDE   = CAN_ID_STD;
+        }
         tx_msg.RTR = (frame.rtr == MOD_CAN_RTR_REMOTE) ? CAN_RTR_REMOTE : CAN_RTR_DATA;
         tx_msg.DLC = (frame.dlc > 8) ? 8 : frame.dlc;
         memcpy(tx_msg.Data, frame.data, tx_msg.DLC);
+
         if (CAN_Transmit(CAN1, &tx_msg) == CAN_TxStatus_NoMailBox) {
-            xQueueSendToFront(CanTxQueue, &frame, 0);   /* 回灌，下一轮再试 */
-            break;
+            break;   /* 邮箱满：帧留在队首，下一轮再试 */
         }
-    }
-}
-
-/* ============================================================
- * Mod_Can_TxTask — 发送任务
- * ① 数据发送 → ② 数据推送 → ③ 让出 CPU
- * ============================================================ */
-void Mod_Can_TxTask(void *pvParameters)
-{
-    (void)pvParameters;
-    while (1) {
-        ModCommCan_Tx();               /* ① 数据发送：统一消费 TX 队列 */
-        // CanProtocol_HeartbeatCheck();   /* 预留 */
-        CanProtocol_WheelCtlSend();    /* ② 数据推送：电机控制帧（10ms 限频）*/
-        vTaskDelay(pdMS_TO_TICKS(1));  /* ③ 让出 CPU */
-    }
-}
-
-/* ============================================================
- * Mod_Can_RxTask — 接收任务
- * 从队列取帧 → 调 ModCommCan_OnRxFrame → 批量处理
- * ============================================================ */
-void Mod_Can_RxTask(void *pvParameters)
-{
-    CanRxMsg rx_msg;
-
-    (void)pvParameters;
-
-    while (1) {
-        if (xQueueReceive(CanRxQueue, &rx_msg, portMAX_DELAY) == pdPASS) {
-            ModCommCan_OnRxFrame(&rx_msg);
-
-            /* 本轮继续处理队列中剩余的消息 */
-            while (xQueueReceive(CanRxQueue, &rx_msg, 0) == pdPASS) {
-                ModCommCan_OnRxFrame(&rx_msg);
-            }
-        }
-				vTaskDelay(pdMS_TO_TICKS(10));
+        xQueueReceive(CanTxQueue, &frame, 0);   /* 发送成功，出队 */
     }
 }
 
@@ -307,21 +280,4 @@ void Can_Heartbeat(void)
     frame.data[7] = 0x00;   /* 预留 */
 
     Mod_Can_TxEvent(&frame);
-}
-/* ============================================================
- * CAN_Test_Task — 测试任务
- * 按下 KEY1 后发送一帧测试报文
- * ============================================================ */
-void CAN_Test_Task(void *pvParameters)
-{
-    (void)pvParameters;
-
-    while (1) {
-        if(xSemaphoreTake(xKey1Sem, pdMS_TO_TICKS(100)) == pdTRUE)
-				{
-					
-					Mod_Can_TxTest();
-				}
-        vTaskDelay(pdMS_TO_TICKS(50));
-    }
 }

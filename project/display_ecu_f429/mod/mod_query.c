@@ -1,10 +1,10 @@
 /**
   ******************************************************************************
-  * @file    task_query.c
+  * @file    mod_query.c
   * @brief   查询协议业务 — 通过弱符号回调接入 UART 通信框架（mod_comm_uart）
   *
   * 原 UART_Query_Task（轮询解析 + 透传 CAN 脚手架）已移除，查询链路拆分为
-  * UART_TX_Task / UART_RX_Task 两个任务。本模块只负责协议业务：
+  * Task_UartTx / Task_UartRx 两个任务。本模块只负责协议业务：
   *   - type=0x01 chip info → 组织应答并经 Mod_Uart_SendPacket() 回发
   *   - 其他 type → 原样回发（环路验证 echo）
   *
@@ -12,7 +12,7 @@
   *        自证（App A 链接于 0x08020000、App B 链接于 0x08080000，VTOR 即运行基址）。
   ******************************************************************************
   */
-#include "task_query.h"
+#include "mod_query.h"
 #include "main.h"
 #include "boot_config.h"   /* 地址常量单一来源（FLASH_BASE_ADDR / APP_A_ADDR / APP_B_ADDR） */
 #include "bsp_log.h"
@@ -49,7 +49,7 @@ static void handle_chip_info_query(void)
 }
 
 // ======================== 初始化（确保本模块被链接） ========================
-void Query_Task_Init(void)
+void Mod_Query_Init(void)
 {
     LOG_I("[QUERY] protocol handler ready\r\n");
 }

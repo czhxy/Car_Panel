@@ -9,9 +9,11 @@
 #include "bsp_i2c_touch.h"
 #include "mod_comm_can.h"
 #include "mod_comm_uart.h"
-#include "mod_dashboard_data.h"
-#include "task_query.h"
-#include "task_lcd_demo.h"
+#include "mod_ui.h"
+#include "mod_query.h"
+#include "task_ui.h"
+#include "task_comm_can.h"
+#include "task_comm_uart.h"
 #include "task_vofa.h"   /* VOFA_DEBUG 开关见 task_vofa.h（临时调试） */
 
 void Task_Entry_All(void * pvParameters);
@@ -56,7 +58,7 @@ void Task_Entry_All(void * pvParameters)
     BSP_CAN_Init();
 
     Mod_Uart_Init();       /* 创建 UART 收发队列（UART_Init 硬件已在 main 中完成） */
-    Query_Task_Init();     /* 查询协议业务初始化（确保 task_query 被链接） */
+    Mod_Query_Init();      /* 查询协议业务初始化（确保 mod_query 被链接） */
 
     BSP_SPI_LCD_Init();    /* SPI5 + ILI9341 */
     BSP_I2C_Touch_Init();  /* I2C1 + FT6336G */
@@ -69,21 +71,21 @@ void Task_Entry_All(void * pvParameters)
      * HEARTBEAT:  512 字（printf/vsprintf 栈开销大）
      * UART_TX:    256 字（TX 队列消费 + 串口发送）
      * UART_RX:    256 字（字节队列 + 拼包 + 业务回调）
-     * LCD_DEMO:   512 字（GUI 绘制栈开销大） */
-    if (xTaskCreate(Mod_Can_TxTask,   "CAN_TX",     512, NULL, 4, NULL) != pdPASS)
+     * UI:        1024 字（LVGL 渲染开销大） */
+    if (xTaskCreate(Task_CanTx,       "CAN_TX",     512, NULL, 4, NULL) != pdPASS)
         LOG_E("[Main] CAN_TX task create failed!\r\n");
-    if (xTaskCreate(Mod_Can_RxTask,   "CAN_RX",     512, NULL, 4, NULL) != pdPASS)
+    if (xTaskCreate(Task_CanRx,       "CAN_RX",     512, NULL, 4, NULL) != pdPASS)
         LOG_E("[Main] CAN_RX task create failed!\r\n");
     if (xTaskCreate(prvKeyScanTask,   "KEY_SCAN",   256, NULL, 2, NULL) != pdPASS)
         LOG_E("[Main] KEY_SCAN task create failed!\r\n");
     if (xTaskCreate(Heartbeat_Task,   "HEARTBEAT",  512, NULL, 1, NULL) != pdPASS)
         LOG_E("[Main] HEARTBEAT task create failed!\r\n");
-    if (xTaskCreate(UART_TX_Task,     "UART_TX",    256, NULL, 4, NULL) != pdPASS)
+    if (xTaskCreate(Task_UartTx,      "UART_TX",    256, NULL, 4, NULL) != pdPASS)
         LOG_E("[Main] UART_TX task create failed!\r\n");
-    if (xTaskCreate(UART_RX_Task,     "UART_RX",    256, NULL, 4, NULL) != pdPASS)
+    if (xTaskCreate(Task_UartRx,      "UART_RX",    256, NULL, 4, NULL) != pdPASS)
         LOG_E("[Main] UART_RX task create failed!\r\n");
-    if (xTaskCreate(Task_LCD_Demo,    "LCD_DEMO",  1024, NULL, 3, NULL) != pdPASS)
-        LOG_E("[Main] LCD_DEMO task create failed!\r\n");
+    if (xTaskCreate(Task_UI,          "UI",       1024, NULL, 3, NULL) != pdPASS)
+        LOG_E("[Main] UI task create failed!\r\n");
 #if VOFA_DEBUG
     if (xTaskCreate(Vofa_Task,       "VOFA",      256, NULL, 4, NULL) != pdPASS)
         LOG_E("[Main] VOFA task create failed!\r\n");

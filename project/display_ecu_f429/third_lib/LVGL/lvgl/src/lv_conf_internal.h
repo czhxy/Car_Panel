@@ -216,7 +216,7 @@
     #ifdef CONFIG_LV_DISP_DEF_REFR_PERIOD
         #define LV_DISP_DEF_REFR_PERIOD CONFIG_LV_DISP_DEF_REFR_PERIOD
     #else
-        #define LV_DISP_DEF_REFR_PERIOD 30      /*[ms]*/
+        #define LV_DISP_DEF_REFR_PERIOD 25      /*[ms]*/
     #endif
 #endif
 

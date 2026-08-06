@@ -371,7 +371,7 @@ CAN_RX Task (prio 4)             LCD_DEMO Task (prio 3)
 
 7. **FreeRTOS 队列 vs 环形队列**：TX/RX 使用 FreeRTOS 队列（线程安全、挂起等待），`components/my_queue.c` 为备用环形队列（当前未被 App 使用）
 
-8. **CAN TX 邮箱保护**：`ModCommCan_Tx()` 邮箱满时用 `xQueueSendToFront` 回灌队首后 break（不丢数据，等待下次出队）
+8. **CAN TX 邮箱保护（与 RX 对称用队列）**：`ModCommCan_Tx()` 用 `xQueuePeek` 先看队首帧、发送成功才 `xQueueReceive` 出队；邮箱满时帧留在队首下轮再试。相比"取出后 `xQueueSendToFront` 回灌队首"：既无回灌失败导致的静默丢帧，也无回灌造成的乱序插队
 
 9. **ModCommCan_OnRxFrame 强符号**：原弱符号 `__weak` 已替换为强符号实现，直接解析心跳帧(0x320)和电机状态帧(0x110)写入 `g_dash_state`，不再需要应用层额外覆盖
 

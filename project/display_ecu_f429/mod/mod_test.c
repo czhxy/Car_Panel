@@ -1,5 +1,5 @@
 #include "mod_test.h"
-#include "mod_gui.h"
+#include "mod_lcd.h"
 #include "mod_test_pic.h"
 #include "bsp_spi_lcd.h"
 #include "bsp_i2c_touch.h"

@@ -1,5 +1,5 @@
-#ifndef __MOD_GUI_H
-#define __MOD_GUI_H
+#ifndef __MOD_LCD_H
+#define __MOD_LCD_H
 
 #include "stm32f4xx.h"
 
@@ -31,4 +31,4 @@ void Gui_StrCenter(uint16_t x, uint16_t y, uint16_t fc, uint16_t bc, uint8_t *st
 /* 图片显示 */
 void Gui_Drawbmp16(uint16_t x, uint16_t y, const unsigned char *p);
 
-#endif /* __MOD_GUI_H */
+#endif /* __MOD_LCD_H */

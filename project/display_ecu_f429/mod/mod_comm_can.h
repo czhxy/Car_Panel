@@ -40,11 +40,9 @@ extern const uint8_t *ModCan_RxErrCount;
 
 /* ---- API 声明 ---- */
 void Mod_Can_Init(void);
-bool Mod_Can_TxEvent(const ModCanFrame *frame);   /* 应用层统一发送入口（平台无关帧）*/
+bool Mod_Can_TxEvent(const ModCanFrame *frame);   /* 应用层统一发送入口（平台无关帧），非阻塞入 TX 队列 */
 void Mod_Can_RxIRQHandler(void);
-void Mod_Can_TxTask(void *pvParameters);
-void Mod_Can_RxTask(void *pvParameters);
-void CAN_Test_Task(void *pvParameters);
+bool Mod_Can_RxDequeue(CanRxMsg *msg, TickType_t timeout);  /* 接收任务：从 RX 队列取一帧 */
 void Mod_Can_TxTest(void);
 void Can_Heartbeat(void);
 void ModCommCan_Tx(void);                         /* 统一消费 TX 队列，提交硬件发送 */

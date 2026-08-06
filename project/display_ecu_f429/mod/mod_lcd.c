@@ -1,4 +1,4 @@
-#include "mod_gui.h"
+#include "mod_lcd.h"
 #include "bsp_spi_lcd.h"
 #include "bsp_spi_lcd_font.h"
 #include "string.h"

@@ -340,7 +340,7 @@
               <MiscControls></MiscControls>
               <Define>STM32F429_439xx,USE_STDPERIPH_DRIVER,LV_LVGL_H_INCLUDE_SIMPLE,LV_CONF_INCLUDE_SIMPLE</Define>
               <Undefine></Undefine>
-              <IncludePath>..\app;..\driver;..\firmware\cmsis\core;..\firmware\cmsis\device;..\firmware\driver\inc;..\components;..\third_lib\FreeRTOS;..\third_lib\FreeRTOS\inc;..\task;..\protocol;..\bootloader;..\pic;..\third_lib\LVGL\lvgl;..\third_lib\LVGL\lvgl\examples\porting</IncludePath>
+              <IncludePath>..\app;..\driver;..\firmware\cmsis\core;..\firmware\cmsis\device;..\firmware\driver\inc;..\components;..\third_lib\FreeRTOS;..\third_lib\FreeRTOS\inc;..\task;..\mod;..\protocol;..\bootloader;..\pic;..\third_lib\LVGL\lvgl;..\third_lib\LVGL\lvgl\examples\porting;..\mod</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -492,97 +492,112 @@
           </Files>
         </Group>
         <Group>
-          <GroupName>task</GroupName>
+          <GroupName>mod</GroupName>
           <Files>
+            <File>
+              <FileName>mod_can_protocol.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\mod\mod_can_protocol.c</FilePath>
+            </File>
+            <File>
+              <FileName>mod_can_protocol.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\mod\mod_can_protocol.h</FilePath>
+            </File>
             <File>
               <FileName>mod_comm_can.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\task\mod_comm_can.c</FilePath>
+              <FilePath>..\mod\mod_comm_can.c</FilePath>
             </File>
             <File>
               <FileName>mod_comm_can.h</FileName>
               <FileType>5</FileType>
-              <FilePath>..\task\mod_comm_can.h</FilePath>
+              <FilePath>..\mod\mod_comm_can.h</FilePath>
             </File>
             <File>
               <FileName>mod_comm_uart.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\task\mod_comm_uart.c</FilePath>
+              <FilePath>..\mod\mod_comm_uart.c</FilePath>
             </File>
             <File>
               <FileName>mod_comm_uart.h</FileName>
               <FileType>5</FileType>
-              <FilePath>..\task\mod_comm_uart.h</FilePath>
+              <FilePath>..\mod\mod_comm_uart.h</FilePath>
             </File>
+            <File>
+              <FileName>mod_lcd.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\mod\mod_lcd.c</FilePath>
+            </File>
+            <File>
+              <FileName>mod_lcd.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\mod\mod_lcd.h</FilePath>
+            </File>
+            <File>
+              <FileName>mod_motor.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\mod\mod_motor.c</FilePath>
+            </File>
+            <File>
+              <FileName>mod_motor.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\mod\mod_motor.h</FilePath>
+            </File>
+            <File>
+              <FileName>mod_query.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\mod\mod_query.c</FilePath>
+            </File>
+            <File>
+              <FileName>mod_query.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\mod\mod_query.h</FilePath>
+            </File>
+            <File>
+              <FileName>mod_test.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\mod\mod_test.c</FilePath>
+            </File>
+            <File>
+              <FileName>mod_test.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\mod\mod_test.h</FilePath>
+            </File>
+            <File>
+              <FileName>mod_test_pic.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\mod\mod_test_pic.h</FilePath>
+            </File>
+            <File>
+              <FileName>mod_ui.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\mod\mod_ui.c</FilePath>
+            </File>
+            <File>
+              <FileName>mod_ui.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\mod\mod_ui.h</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>task</GroupName>
+          <Files>
             <File>
               <FileName>task_entry.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\task\task_entry.c</FilePath>
             </File>
             <File>
-              <FileName>task_query.c</FileName>
+              <FileName>task_ui.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\task\task_query.c</FilePath>
+              <FilePath>..\task\task_ui.c</FilePath>
             </File>
             <File>
-              <FileName>task_query.h</FileName>
+              <FileName>task_ui.h</FileName>
               <FileType>5</FileType>
-              <FilePath>..\task\task_query.h</FilePath>
-            </File>
-            <File>
-              <FileName>task_comm_can_protocol.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\task\task_comm_can_protocol.c</FilePath>
-            </File>
-            <File>
-              <FileName>task_comm_can_protocol.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>..\task\task_comm_can_protocol.h</FilePath>
-            </File>
-            <File>
-              <FileName>mod_gui.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\task\mod_gui.c</FilePath>
-            </File>
-            <File>
-              <FileName>mod_test.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\task\mod_test.c</FilePath>
-            </File>
-            <File>
-              <FileName>task_lcd_demo.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\task\task_lcd_demo.c</FilePath>
-            </File>
-            <File>
-              <FileName>mod_dashboard_data.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\task\mod_dashboard_data.c</FilePath>
-            </File>
-            <File>
-              <FileName>mod_dashboard_data.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>..\task\mod_dashboard_data.h</FilePath>
-            </File>
-            <File>
-              <FileName>mod_dashboard_fault.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\task\mod_dashboard_fault.c</FilePath>
-            </File>
-            <File>
-              <FileName>mod_dashboard_fault.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>..\task\mod_dashboard_fault.h</FilePath>
-            </File>
-            <File>
-              <FileName>task_dashboard_ui.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\task\task_dashboard_ui.c</FilePath>
-            </File>
-            <File>
-              <FileName>task_dashboard_ui.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>..\task\task_dashboard_ui.h</FilePath>
+              <FilePath>..\task\task_ui.h</FilePath>
             </File>
             <File>
               <FileName>task_vofa.c</FileName>
@@ -593,6 +608,26 @@
               <FileName>task_vofa.h</FileName>
               <FileType>5</FileType>
               <FilePath>..\task\task_vofa.h</FilePath>
+            </File>
+            <File>
+              <FileName>task_comm_can.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\task\task_comm_can.c</FilePath>
+            </File>
+            <File>
+              <FileName>task_comm_can.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\task\task_comm_can.h</FilePath>
+            </File>
+            <File>
+              <FileName>task_comm_uart.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\task\task_comm_uart.c</FilePath>
+            </File>
+            <File>
+              <FileName>task_comm_uart.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\task\task_comm_uart.h</FilePath>
             </File>
           </Files>
         </Group>
@@ -643,16 +678,6 @@
               <FileName>usart6.h</FileName>
               <FileType>5</FileType>
               <FilePath>..\driver\usart6.h</FilePath>
-            </File>
-            <File>
-              <FileName>mod_motor.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\driver\mod_motor.c</FilePath>
-            </File>
-            <File>
-              <FileName>mod_motor.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>..\driver\mod_motor.h</FilePath>
             </File>
           </Files>
         </Group>
@@ -1778,7 +1803,7 @@
               <MiscControls></MiscControls>
               <Define>STM32F429_439xx,USE_STDPERIPH_DRIVER,APP_SLOT_B,LV_LVGL_H_INCLUDE_SIMPLE,LV_CONF_INCLUDE_SIMPLE</Define>
               <Undefine></Undefine>
-              <IncludePath>..\app;..\driver;..\firmware\cmsis\core;..\firmware\cmsis\device;..\firmware\driver\inc;..\components;..\third_lib\FreeRTOS;..\third_lib\FreeRTOS\inc;..\task;..\protocol;..\bootloader;..\pic;..\third_lib\LVGL\lvgl;..\third_lib\LVGL\lvgl\examples\porting</IncludePath>
+              <IncludePath>..\app;..\driver;..\firmware\cmsis\core;..\firmware\cmsis\device;..\firmware\driver\inc;..\components;..\third_lib\FreeRTOS;..\third_lib\FreeRTOS\inc;..\task;..\mod;..\protocol;..\bootloader;..\pic;..\third_lib\LVGL\lvgl;..\third_lib\LVGL\lvgl\examples\porting</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -1930,97 +1955,112 @@
           </Files>
         </Group>
         <Group>
-          <GroupName>task</GroupName>
+          <GroupName>mod</GroupName>
           <Files>
+            <File>
+              <FileName>mod_can_protocol.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\mod\mod_can_protocol.c</FilePath>
+            </File>
+            <File>
+              <FileName>mod_can_protocol.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\mod\mod_can_protocol.h</FilePath>
+            </File>
             <File>
               <FileName>mod_comm_can.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\task\mod_comm_can.c</FilePath>
+              <FilePath>..\mod\mod_comm_can.c</FilePath>
             </File>
             <File>
               <FileName>mod_comm_can.h</FileName>
               <FileType>5</FileType>
-              <FilePath>..\task\mod_comm_can.h</FilePath>
+              <FilePath>..\mod\mod_comm_can.h</FilePath>
             </File>
             <File>
               <FileName>mod_comm_uart.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\task\mod_comm_uart.c</FilePath>
+              <FilePath>..\mod\mod_comm_uart.c</FilePath>
             </File>
             <File>
               <FileName>mod_comm_uart.h</FileName>
               <FileType>5</FileType>
-              <FilePath>..\task\mod_comm_uart.h</FilePath>
+              <FilePath>..\mod\mod_comm_uart.h</FilePath>
             </File>
+            <File>
+              <FileName>mod_lcd.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\mod\mod_lcd.c</FilePath>
+            </File>
+            <File>
+              <FileName>mod_lcd.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\mod\mod_lcd.h</FilePath>
+            </File>
+            <File>
+              <FileName>mod_motor.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\mod\mod_motor.c</FilePath>
+            </File>
+            <File>
+              <FileName>mod_motor.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\mod\mod_motor.h</FilePath>
+            </File>
+            <File>
+              <FileName>mod_query.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\mod\mod_query.c</FilePath>
+            </File>
+            <File>
+              <FileName>mod_query.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\mod\mod_query.h</FilePath>
+            </File>
+            <File>
+              <FileName>mod_test.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\mod\mod_test.c</FilePath>
+            </File>
+            <File>
+              <FileName>mod_test.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\mod\mod_test.h</FilePath>
+            </File>
+            <File>
+              <FileName>mod_test_pic.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\mod\mod_test_pic.h</FilePath>
+            </File>
+            <File>
+              <FileName>mod_ui.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\mod\mod_ui.c</FilePath>
+            </File>
+            <File>
+              <FileName>mod_ui.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\mod\mod_ui.h</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>task</GroupName>
+          <Files>
             <File>
               <FileName>task_entry.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\task\task_entry.c</FilePath>
             </File>
             <File>
-              <FileName>task_query.c</FileName>
+              <FileName>task_ui.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\task\task_query.c</FilePath>
+              <FilePath>..\task\task_ui.c</FilePath>
             </File>
             <File>
-              <FileName>task_query.h</FileName>
+              <FileName>task_ui.h</FileName>
               <FileType>5</FileType>
-              <FilePath>..\task\task_query.h</FilePath>
-            </File>
-            <File>
-              <FileName>task_comm_can_protocol.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\task\task_comm_can_protocol.c</FilePath>
-            </File>
-            <File>
-              <FileName>task_comm_can_protocol.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>..\task\task_comm_can_protocol.h</FilePath>
-            </File>
-            <File>
-              <FileName>mod_gui.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\task\mod_gui.c</FilePath>
-            </File>
-            <File>
-              <FileName>mod_test.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\task\mod_test.c</FilePath>
-            </File>
-            <File>
-              <FileName>task_lcd_demo.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\task\task_lcd_demo.c</FilePath>
-            </File>
-            <File>
-              <FileName>mod_dashboard_data.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\task\mod_dashboard_data.c</FilePath>
-            </File>
-            <File>
-              <FileName>mod_dashboard_data.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>..\task\mod_dashboard_data.h</FilePath>
-            </File>
-            <File>
-              <FileName>mod_dashboard_fault.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\task\mod_dashboard_fault.c</FilePath>
-            </File>
-            <File>
-              <FileName>mod_dashboard_fault.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>..\task\mod_dashboard_fault.h</FilePath>
-            </File>
-            <File>
-              <FileName>task_dashboard_ui.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\task\task_dashboard_ui.c</FilePath>
-            </File>
-            <File>
-              <FileName>task_dashboard_ui.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>..\task\task_dashboard_ui.h</FilePath>
+              <FilePath>..\task\task_ui.h</FilePath>
             </File>
             <File>
               <FileName>task_vofa.c</FileName>
@@ -2031,6 +2071,26 @@
               <FileName>task_vofa.h</FileName>
               <FileType>5</FileType>
               <FilePath>..\task\task_vofa.h</FilePath>
+            </File>
+            <File>
+              <FileName>task_comm_can.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\task\task_comm_can.c</FilePath>
+            </File>
+            <File>
+              <FileName>task_comm_can.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\task\task_comm_can.h</FilePath>
+            </File>
+            <File>
+              <FileName>task_comm_uart.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\task\task_comm_uart.c</FilePath>
+            </File>
+            <File>
+              <FileName>task_comm_uart.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\task\task_comm_uart.h</FilePath>
             </File>
           </Files>
         </Group>
@@ -2081,16 +2141,6 @@
               <FileName>usart6.h</FileName>
               <FileType>5</FileType>
               <FilePath>..\driver\usart6.h</FilePath>
-            </File>
-            <File>
-              <FileName>mod_motor.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\driver\mod_motor.c</FilePath>
-            </File>
-            <File>
-              <FileName>mod_motor.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>..\driver\mod_motor.h</FilePath>
             </File>
           </Files>
         </Group>

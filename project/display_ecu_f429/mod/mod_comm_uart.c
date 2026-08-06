@@ -5,9 +5,9 @@
   *
   * 数据流：
   *   RX: USART1_IRQHandler → Mod_Uart_RxIRQHandler()（ISR 直入字节队列）
-  *       → UART_RX_Task 拼包状态机 → ModCommUart_OnRxPacket()
+  *       → Task_UartRx 取字节 → Mod_Uart_RxByte 拼包状态机 → ModCommUart_OnRxPacket()
   *   TX: Mod_Uart_SendPacket() 组包入 TX 队列
-  *       → UART_TX_Task 统一消费 → UART_SendArray()（临界区与 printf 互斥）
+  *       → Task_UartTx → Mod_Uart_TxSend 统一消费 → UART_SendArray()（临界区与 printf 互斥）
   ******************************************************************************
   */
 #include "mod_comm_uart.h"
@@ -141,29 +141,22 @@ bool Mod_Uart_SendPacket(uint8_t type, const uint8_t *data, uint8_t len)
 }
 
 /* ============================================================
- * UART_TX_Task — 统一消费 TX 队列并发送
+ * Mod_Uart_TxSend — 从 TX 队列取一个包并发送（发送任务调用）
+ * timeout: 队列空时等待时间（portMAX_DELAY 阻塞 / 0 立即返回）
+ * 返回: 是否成功发送了一个包
  * 与 printf(fputc 轮询写 USART1) 互斥，发送时用临界区保护
  * ============================================================ */
-void UART_TX_Task(void *pvParameters)
+bool Mod_Uart_TxSend(TickType_t timeout)
 {
     ModUartTxPacket pkt;
 
-    (void)pvParameters;
+    if (UartTxQueue == NULL) { return false; }
+    if (xQueueReceive(UartTxQueue, &pkt, timeout) != pdPASS) { return false; }
 
-    while (1) {
-        if (xQueueReceive(UartTxQueue, &pkt, portMAX_DELAY) == pdPASS) {
-            taskENTER_CRITICAL();
-            UART_SendArray(pkt.buf, pkt.len);
-            taskEXIT_CRITICAL();
-
-            /* 本轮继续消费队列中剩余的包 */
-            while (xQueueReceive(UartTxQueue, &pkt, 0) == pdPASS) {
-                taskENTER_CRITICAL();
-                UART_SendArray(pkt.buf, pkt.len);
-                taskEXIT_CRITICAL();
-            }
-        }
-    }
+    taskENTER_CRITICAL();
+    UART_SendArray(pkt.buf, pkt.len);
+    taskEXIT_CRITICAL();
+    return true;
 }
 
 /* ============================================================
@@ -256,24 +249,22 @@ static void uart_rx_process_byte(uint8_t ch)
 }
 
 /* ============================================================
- * UART_RX_Task — 从字节队列取字节，拼包后回调业务层
+ * Mod_Uart_RxDequeue — 从字节队列取一字节（供接收任务调用）
+ * timeout: portMAX_DELAY 阻塞等待 / 0 立即返回
+ * 返回: 是否成功取到一字节
  * ============================================================ */
-void UART_RX_Task(void *pvParameters)
+bool Mod_Uart_RxDequeue(uint8_t *ch, TickType_t timeout)
 {
-    uint8_t ch;
+    if (UartRxQueue == NULL || ch == NULL) { return false; }
+    return (xQueueReceive(UartRxQueue, ch, timeout) == pdPASS);
+}
 
-    (void)pvParameters;
-
-    while (1) {
-        if (xQueueReceive(UartRxQueue, &ch, portMAX_DELAY) == pdPASS) {
-            uart_rx_process_byte(ch);
-
-            /* 本轮继续消费队列中剩余的字节 */
-            while (xQueueReceive(UartRxQueue, &ch, 0) == pdPASS) {
-                uart_rx_process_byte(ch);
-            }
-        }
-    }
+/* ============================================================
+ * Mod_Uart_RxByte — 喂一个字节给拼包状态机（协议编解码在 mod 层）
+ * ============================================================ */
+void Mod_Uart_RxByte(uint8_t ch)
+{
+    uart_rx_process_byte(ch);
 }
 
 /* ============================================================
