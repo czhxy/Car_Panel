@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>汽车仪表盘预览 — 240×320 ILI9341</title>
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #0a0a0f;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    padding: 20px;
+  }
+
+  .dashboard {
+    width: 480px;
+    height: 640px;
+    background: radial-gradient(ellipse at 50% 50%, #0d1117 0%, #06080c 100%);
+    border-radius: 24px;
+    border: 2px solid rgba(0, 200, 255, 0.15);
+    box-shadow:
+      0 0 60px rgba(0, 120, 255, 0.12),
+      inset 0 0 100px rgba(0, 0, 0, 0.5);
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* 顶部状态栏 */
+  .top-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    height: 36px;
+    padding: 0 8px;
+    border-bottom: 1px solid rgba(0, 200, 255, 0.1);
+  }
+  .gear-indicator {
+    font-size: 22px;
+    font-weight: 700;
+    color: #00e5ff;
+    text-shadow: 0 0 12px rgba(0, 229, 255, 0.5);
+    letter-spacing: 2px;
+    background: rgba(0, 229, 255, 0.06);
+    border: 1px solid rgba(0, 229, 255, 0.2);
+    border-radius: 6px;
+    padding: 2px 12px;
+  }
+  .time-display {
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.5);
+    font-variant-numeric: tabular-nums;
+  }
+  .mode-indicator {
+    font-size: 11px;
+    color: #00e5ff;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    opacity: 0.7;
+  }
+
+  /* CAN 通信指示灯 */
+  .can-indicator {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .can-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #4caf50;
+    box-shadow: 0 0 6px rgba(76, 175, 80, 0.6);
+    animation: can-blink 1s infinite;
+  }
+  .can-label {
+    font-size: 9px;
+    color: rgba(255, 255, 255, 0.3);
+    letter-spacing: 1px;
+  }
+  @keyframes can-blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  /* 转速表盘区域 */
+  .speed-section {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    margin: 4px 0;
+  }
+
+  /* SVG 弧形表盘 */
+  .gauge-container {
+    position: relative;
+    width: 260px;
+    height: 260px;
+  }
+  .gauge-svg {
+    transform: rotate(-90deg);
+  }
+  .gauge-bg { stroke: rgba(255, 255, 255, 0.05); }
+  .gauge-fill { transition: stroke-dashoffset 0.5s ease; }
+
+  .speed-value {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+  }
+  .speed-num {
+    font-size: 72px;
+    font-weight: 200;
+    color: #00e5ff;
+    line-height: 1;
+    text-shadow: 0 0 30px rgba(0, 229, 255, 0.4);
+  }
+  .speed-unit {
+    font-size: 14px;
+    color: rgba(255, 255, 255, 0.35);
+    letter-spacing: 3px;
+    margin-top: -4px;
+  }
+
+  /* 进度条 */
+  .progress-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding-top: 2px;
+    margin-bottom: 4px;
+  }
+  .progress-bar-bg {
+    width: 100%;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .progress-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #00e5ff, #00bcd4, #009688, #ff5722);
+    border-radius: 2px;
+    transition: width 0.3s ease;
+    width: 42%;
+  }
+  .progress-label {
+    display: flex;
+    justify-content: space-between;
+    width: 100%;
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.25);
+    padding: 0 4px;
+  }
+
+  /* 转向灯 */
+  .turn-section {
+    display: flex;
+    justify-content: space-between;
+    padding: 0 40px;
+    margin-bottom: 4px;
+    height: 24px;
+    align-items: center;
+  }
+  .turn-arrow {
+    width: 0; height: 0;
+    border-top: 8px solid transparent;
+    border-bottom: 8px solid transparent;
+    opacity: 0.15;
+    transition: opacity 0.3s;
+  }
+  .turn-left {
+    border-right: 14px solid #00e5ff;
+  }
+  .turn-right {
+    border-left: 14px solid #00e5ff;
+  }
+  .turn-active { opacity: 1; }
+
+  /* 指示灯网格 */
+  .indicator-grid {
+    display: flex;
+    justify-content: center;
+    gap: 14px;
+    padding: 4px 0;
+    margin-bottom: 4px;
+  }
+  .warning-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.08);
+    transition: all 0.3s;
+  }
+  .warning-dot.active {
+    box-shadow: 0 0 8px currentColor;
+  }
+  .abs   { color: #ffeb3b; }
+  .esc   { color: #ff9800; }
+  .engine { color: #f44336; }
+  .batt  { color: #4caf50; }
+  .beam  { color: #2196f3; }
+  .door  { color: #e91e63; }
+  .abs.active   { background: #ffeb3b; }
+  .esc.active   { background: #ff9800; }
+  .engine.active { background: #f44336; }
+  .batt.active  { background: #4caf50; }
+  .beam.active  { background: #2196f3; }
+  .door.active  { background: #e91e63; }
+
+  /* 底部信息区 */
+  .bottom-section {
+    display: flex;
+    justify-content: space-between;
+    align-items: stretch;
+    gap: 6px;
+    height: 56px;
+  }
+
+  /* 左侧：里程 */
+  .info-block-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    flex: 1;
+    background: rgba(0, 229, 255, 0.03);
+    border: 1px solid rgba(0, 229, 255, 0.08);
+    border-radius: 6px;
+    padding: 4px 8px;
+  }
+  .info-label {
+    font-size: 8px;
+    color: rgba(255, 255, 255, 0.25);
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+  }
+  .info-value {
+    font-size: 18px;
+    font-weight: 700;
+    color: #e0e0e0;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 1px;
+  }
+
+  /* 中间：电量 */
+  .battery-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    flex: 1;
+    background: rgba(0, 229, 255, 0.03);
+    border: 1px solid rgba(0, 229, 255, 0.08);
+    border-radius: 6px;
+    padding: 4px 8px;
+  }
+  .battery-icon {
+    width: 36px;
+    height: 16px;
+    border: 2px solid rgba(0, 229, 255, 0.3);
+    border-radius: 2px;
+    padding: 2px;
+    position: relative;
+  }
+  .battery-icon::after {
+    content: '';
+    position: absolute;
+    right: -4px; top: 3px;
+    width: 2px; height: 6px;
+    background: rgba(0, 229, 255, 0.3);
+    border-radius: 0 1px 1px 0;
+  }
+  .battery-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #00e5ff, #00bcd4);
+    border-radius: 1px;
+    transition: width 0.5s ease;
+    width: 78%;
+  }
+  .battery-pct {
+    font-size: 11px;
+    font-weight: 600;
+    color: #00e5ff;
+  }
+
+  /* 右侧：SOC (State of Charge) */
+  .right-card {
+    flex: 1;
+  }
+  .right-value {
+    color: #00e5ff;
+  }
+
+  /* 电机错误上报信息框 */
+  .error-box {
+    margin-top: 6px;
+    padding: 6px 10px;
+    background: rgba(244, 67, 54, 0.04);
+    border: 1px solid rgba(244, 67, 54, 0.15);
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 36px;
+  }
+  .error-icon {
+    width: 12px;
+    height: 12px;
+    background: #f44336;
+    border-radius: 2px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 8px;
+    font-weight: 700;
+    line-height: 1;
+    box-shadow: 0 0 8px rgba(244, 67, 54, 0.4);
+    animation: err-pulse 2s infinite;
+  }
+  @keyframes err-pulse {
+    0%, 100% { box-shadow: 0 0 4px rgba(244, 67, 54, 0.4); }
+    50% { box-shadow: 0 0 10px rgba(244, 67, 54, 0.8); }
+  }
+  .error-text {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .error-label {
+    font-size: 8px;
+    color: rgba(244, 67, 54, 0.5);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  .error-message {
+    font-size: 11px;
+    color: rgba(244, 67, 54, 0.85);
+    font-weight: 600;
+  }
+  .error-status {
+    font-size: 9px;
+    color: rgba(255, 255, 255, 0.2);
+    letter-spacing: 1px;
+    white-space: nowrap;
+  }
+
+  /* 扫描线效果 */
+  .scanline {
+    position: absolute;
+    top: 0; left: 0; right: 0; height: 100%;
+    background: repeating-linear-gradient(
+      to bottom,
+      transparent,
+      transparent 2px,
+      rgba(0, 0, 0, 0.02) 2px,
+      rgba(0, 0, 0, 0.02) 4px
+    );
+    pointer-events: none;
+    border-radius: 24px;
+  }
+
+  /* 边角装饰 */
+  .corner-decor {
+    position: absolute;
+    width: 16px; height: 16px;
+    border-color: rgba(0, 229, 255, 0.2);
+    border-style: solid;
+  }
+  .corner-tl { top: 6px; left: 6px; border-width: 1px 0 0 1px; }
+  .corner-tr { top: 6px; right: 6px; border-width: 1px 1px 0 0; }
+  .corner-bl { bottom: 6px; left: 6px; border-width: 0 0 1px 1px; }
+  .corner-br { bottom: 6px; right: 6px; border-width: 0 1px 1px 0; }
+</style>
+</head>
+<body>
+
+<div class="dashboard">
+  <div class="scanline"></div>
+  <div class="corner-decor corner-tl"></div>
+  <div class="corner-decor corner-tr"></div>
+  <div class="corner-decor corner-bl"></div>
+  <div class="corner-decor corner-br"></div>
+
+  <!-- 顶部栏: 模式 + CAN指示灯 + 档位 -->
+  <div class="top-bar">
+    <span class="mode-indicator">SPORT</span>
+    <div class="can-indicator">
+      <div class="can-dot"></div>
+      <span class="can-label">CAN</span>
+    </div>
+    <span class="gear-indicator">D</span>
+  </div>
+
+  <!-- 转速表盘 (RPM) -->
+  <div class="speed-section">
+    <div class="gauge-container">
+      <svg width="260" height="260" viewBox="0 0 260 260" class="gauge-svg">
+        <circle cx="130" cy="130" r="115" fill="none"
+          class="gauge-bg" stroke-width="8"
+          stroke-dasharray="578.1" stroke-dashoffset="144.5"
+          stroke-linecap="round" />
+        <circle cx="130" cy="130" r="115" fill="none"
+          class="gauge-fill" stroke-width="8"
+          stroke="url(#speedGrad)"
+          stroke-dasharray="578.1" stroke-dashoffset="289.1"
+          stroke-linecap="round" />
+        <defs>
+          <linearGradient id="speedGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" style="stop-color:#00e5ff" />
+            <stop offset="70%" style="stop-color:#00bcd4" />
+            <stop offset="100%" style="stop-color:#ff5722" />
+          </linearGradient>
+        </defs>
+      </svg>
+      <div class="speed-value">
+        <div class="speed-num" id="rpmVal">6800</div>
+        <div class="speed-unit">RPM</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 负载进度条 -->
+  <div class="progress-section">
+    <div class="progress-bar-bg"><div class="progress-bar-fill" id="loadBar"></div></div>
+    <div class="progress-label">
+      <span>0</span><span>25</span><span>50</span><span>75</span><span>LOAD %</span>
+    </div>
+  </div>
+
+  <!-- 转向灯 -->
+  <div class="turn-section">
+    <div class="turn-arrow turn-left" id="turnLeft"></div>
+    <div class="turn-arrow turn-right turn-active" id="turnRight"></div>
+  </div>
+
+  <!-- 指示灯 -->
+  <div class="indicator-grid">
+    <div class="warning-dot abs" id="abs"></div>
+    <div class="warning-dot esc" id="esc"></div>
+    <div class="warning-dot engine" id="engine"></div>
+    <div class="warning-dot batt active" id="batt"></div>
+    <div class="warning-dot beam" id="beam"></div>
+    <div class="warning-dot door" id="door"></div>
+  </div>
+
+  <!-- 底部: 里程 + 电量 + SOC -->
+  <div class="bottom-section">
+    <div class="info-block-card">
+      <span class="info-label">ODO</span>
+      <span class="info-value" id="odo">12,458</span>
+    </div>
+    <div class="battery-section">
+      <div class="battery-icon">
+        <div class="battery-fill" id="battFill"></div>
+      </div>
+      <span class="battery-pct" id="battPct">78%</span>
+    </div>
+    <div class="info-block-card right-card">
+      <span class="info-label">SOC</span>
+      <span class="info-value right-value">85%</span>
+    </div>
+  </div>
+
+  <!-- 电机错误上报信息框 -->
+  <div class="error-box">
+    <div class="error-icon">!</div>
+    <div class="error-text">
+      <span class="error-label">MOTOR STATUS</span>
+      <span class="error-message" id="errMsg">LEFT MOTOR: OVERCURRENT</span>
+    </div>
+    <span class="error-status" id="errCode">E002</span>
+  </div>
+</div>
+
+<script>
+let rpm = 6800;
+let load = 42;
+const errors = [
+  'MOTOR NORMAL',
+  'LEFT MOTOR: OVERCURRENT',
+  'RIGHT MOTOR: HALL FAULT',
+  'COMM LOST',
+  'OVERTEMP WARNING',
+  'ENCODER ERROR',
+];
+let errIdx = 0;
+
+setInterval(() => {
+  rpm += (Math.random() - 0.5) * 200;
+  rpm = Math.max(0, Math.min(12000, rpm));
+  load += (Math.random() - 0.5) * 2;
+  load = Math.max(0, Math.min(100, load));
+
+  document.getElementById('rpmVal').textContent = Math.round(rpm);
+  document.getElementById('loadBar').style.width = load + '%';
+
+  // 转向灯闪烁
+  if (Math.random() < 0.12) {
+    const el = document.getElementById(Math.random() < 0.5 ? 'turnLeft' : 'turnRight');
+    el.classList.toggle('turn-active');
+  }
+
+  // 指示灯随机亮灭
+  if (Math.random() < 0.05) {
+    const dots = document.querySelectorAll('.warning-dot');
+    const d = dots[Math.floor(Math.random() * dots.length)];
+    d.classList.toggle('active');
+  }
+}, 500);
+
+// 电机错误轮播
+setInterval(() => {
+  errIdx = (errIdx + 1) % errors.length;
+  const msg = errors[errIdx];
+  document.getElementById('errMsg').textContent = msg;
+  document.getElementById('errCode').textContent = msg === 'MOTOR NORMAL'
+    ? 'OK' : 'E00' + (errIdx);
+  // 正常状态绿色，错误红色
+  const errBox = document.querySelector('.error-box');
+  const errIcon = document.querySelector('.error-icon');
+  if (msg === 'MOTOR NORMAL') {
+    errBox.style.borderColor = 'rgba(76,175,80,0.25)';
+    errBox.style.background = 'rgba(76,175,80,0.04)';
+    errIcon.style.background = '#4caf50';
+    errIcon.style.boxShadow = '0 0 8px rgba(76,175,80,0.4)';
+    document.getElementById('errCode').style.color = '#4caf50';
+    document.querySelector('.error-message').style.color = 'rgba(76,175,80,0.85)';
+  } else {
+    errBox.style.borderColor = 'rgba(244,67,54,0.15)';
+    errBox.style.background = 'rgba(244,67,54,0.04)';
+    errIcon.style.background = '#f44336';
+    errIcon.style.boxShadow = '0 0 8px rgba(244,67,54,0.4)';
+    document.getElementById('errCode').style.color = 'rgba(255,255,255,0.2)';
+    document.querySelector('.error-message').style.color = 'rgba(244,67,54,0.85)';
+  }
+}, 3000);
+</script>
+
+</body>
+</html>

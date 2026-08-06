@@ -19,7 +19,7 @@
 
 ## 当前状态概要
 
-CAN 通信框架完整运行（TX/RX 双队列、中断接收、心跳、ID 编解码、电机控制帧周期发送）。关键短板：MSP2834 SPI LCD（ILI9341V）驱动和 LVGL 仪表盘 UI 完全未开发。
+CAN 通信框架完整运行（TX 最新值缓冲槽 + RX 队列、中断接收、心跳、ID 编解码、电机控制帧周期发送）。SPI5 ILI9341 LCD 驱动、I2C1 FT6336G 触摸驱动、LVGL 仪表盘 UI（DMA2D 加速 + 双缓冲，动态数据 25ms 刷新）均已运行。查询协议经 UART 串口完成环路验证。
 
 **详细进度 → [`HANDOFF.md`](./HANDOFF.md)**
 
@@ -32,8 +32,9 @@ display_ecu_f429/
   components/           可复用组件（环形队列）
   driver/               底层驱动（USART、延时、电机传感器占位）
   firmware/             CMSIS + STM32F4xx SPL
-  task/                 FreeRTOS 任务
-  third_lib/            FreeRTOS v11.3.0
+  mod/                  模块层（mod_comm_can/uart、mod_ui、mod_can_protocol、mod_query 等）
+  task/                 FreeRTOS 任务（task_entry/task_ui/task_comm_can/uart）
+  third_lib/            FreeRTOS v11.3.0 + LVGL v8.3.11
   mdk/                  Keil 工程 + scatter 文件
   protocol/             CAN 协议定义 + Python 工具
   tools/                YMODEM 发送工具
@@ -51,17 +52,21 @@ display_ecu_f429/
 | 最小栈 | 128 字 |
 | FPU | 启用 |
 
-**已创建的任务**：
+**已创建的任务**（`task/task_entry.c` 创建；不含 VOFA 共 8 个 = 1 一次性初始化入口 + 7 常驻业务任务）：
 
-| 任务 | 栈 | 优先级 | 函数 |
-|---|---|---|---|
-| ALL_Task_Entry | 256 字 | 30 | 一次性初始化入口，创建以下 6 个任务 |
-| CAN_TX | 512 字 | 3 | `Mod_Can_TxTask` |
-| CAN_RX | 512 字 | 3 | `Mod_Can_RxTask` |
-| CAN_TEST | 256 字 | 3 | `CAN_Test_Task` |
-| KEY_SCAN | 256 字 | 2 | `prvKeyScanTask` |
-| HEARTBEAT | 512 字 | 1 | `Heartbeat_Task` |
-| UART_QUERY | 256 字 | 2 | `UART_Query_Task` |
+| 任务 | 栈 | 优先级 | 函数 | 说明 |
+|---|---|---|---|---|
+| ALL_Task_Entry | 256 字 | 30 | `Task_Entry_All` | main.c 创建；初始化 BSP/队列/共享状态后创建子任务并自删 |
+| CAN_TX | 512 字 | 4 | `Task_CanTx` | 消费 TX 队列发送 + 电机控制帧 10ms 限频 |
+| CAN_RX | 512 字 | 4 | `Task_CanRx` | RX 队列取帧 → `ModCommCan_OnRxFrame()` |
+| KEY_SCAN | 256 字 | 2 | `prvKeyScanTask` | GPIO 轮询（KEY1 触发 CAN 测试帧） |
+| HEARTBEAT | 512 字 | 1 | `Heartbeat_Task` | LED1 500ms 翻转 + `Can_Heartbeat()` |
+| UART_TX | 256 字 | 4 | `Task_UartTx` | TX 包队列消费 + 串口发送 |
+| UART_RX | 256 字 | 4 | `Task_UartRx` | 字节队列 + 拼包状态机 + 业务回调 |
+| UI | 1024 字 | 3 | `Task_UI` | LVGL 渲染（5ms 轮询）+ 25ms 数据刷新 |
+| VOFA | 256 字 | 4 | `Vofa_Task` | `#if VOFA_DEBUG` 条件创建，临时调试（默认开） |
+
+> `Task_CanTest`（CAN_TEST）已注释不创建，函数保留供 KEY1 测试复用。
 
 ## CAN 通信架构
 
@@ -86,10 +91,10 @@ CAN_ID_BUILD(prio, src, dst, ftype, mode, func) → 宏版本
 ```
 TX: 应用层 → ModCanFrame → Mod_Can_TxEvent() → CanTxQueue (FreeRTOS队列, 深度64)
        → ModCommCan_Tx() → CanTxMsg → CAN_Transmit() → 硬件邮箱
-       邮箱满 → xQueueSendToFront 回灌队首，break
+       邮箱满 → 帧留在队首，break（下一轮再试；用 xQueuePeek，发送成功才出队）
 
 RX: CAN FIFO0 ISR → Mod_Can_RxIRQHandler() → CanRxQueue (FreeRTOS队列, 深度64)
-       → Mod_Can_RxTask() → ModCommCan_OnRxFrame() (弱符号，可被应用层强符号覆盖)
+       → Task_CanRx() → ModCommCan_OnRxFrame() (强符号：解析心跳/状态帧写 g_dash_state)
 ```
 
 ### 当前发送的帧
@@ -97,7 +102,7 @@ RX: CAN FIFO0 ISR → Mod_Can_RxIRQHandler() → CanRxQueue (FreeRTOS队列, 深
 | 帧 | 函数 | 周期 | 内容 |
 |---|---|---|---|
 | 心跳 | `Can_Heartbeat()` | 500ms | 4 字节计数 + 4 字节状态 |
-| 电机控制 | `CanProtocol_WheelCtlSend()` | 10ms 限频 | 转速/角度（当前 Mod_Motor 返回 0） |
+| 电机控制 | `CanProtocol_WheelCtlSend()` | 10ms 限频 | rpm_target（拖动条 0–100 ×3 → 0–300 RPM，×10 编码），data[7]=3 |
 | 测试帧 | `Mod_Can_TxTest()` | 按键触发 | 8 字节递增测试数据 |
 
 ## 引脚分配
@@ -108,6 +113,17 @@ RX: CAN FIFO0 ISR → Mod_Can_RxIRQHandler() → CanRxQueue (FreeRTOS队列, 深
 | CAN1_RX | PA11 | 已实现 |
 | USART1_TX | PA9 | printf 日志输出 |
 | USART1_RX | PA10 | 查询协议命令接收 |
+| SPI5_SCK | PF7 | LCD SPI 时钟 |
+| SPI5_MISO | PF8 | LCD SPI 数据读 |
+| SPI5_MOSI | PF9 | LCD SPI 数据写 |
+| LCD_RS | PI8 | LCD 命令/数据 |
+| LCD_RST | PI9 | LCD 复位 |
+| LCD_CS | PI10 | LCD 片选 |
+| LCD_BL | PD6 | LCD 背光 |
+| I2C1_SCL | PB6 | 触摸 I2C 时钟 |
+| I2C1_SDA | PB7 | 触摸 I2C 数据 |
+| CTP_INT | PB8 | 触摸中断 |
+| CTP_RST | PB9 | 触摸复位 |
 | LED1 | PH12 | 心跳指示 |
 | LED2 | PH10 | — |
 | LED3 | PH11 | — |
@@ -118,7 +134,8 @@ RX: CAN FIFO0 ISR → Mod_Can_RxIRQHandler() → CanRxQueue (FreeRTOS队列, 深
 ## 编码约定
 
 - BSP 层：`app/bsp_<module>.c/h` — 硬件抽象
-- 任务层：`task/mod_<module>.c/h`（模块）或 `task/task_<module>.c/h`（任务）
+- 模块层：`mod/mod_<module>.c/h` — 业务逻辑（可被 task 调用）
+- 任务层：`task/task_<module>.c/h` — 任务；task 可调 mod，mod 不可调 task（单向依赖）
 - 日志：`LOG_E/W/I/D` → `printf()` + `\r\n`
-- `ModCommCan_OnRxFrame()` 是弱符号（`__weak`），应用层可定义同名强符号覆盖
+- 弱符号覆盖：`ModCommUart_OnRxPacket()` 为 `__weak`，由 `mod_query` 强符号覆盖；`ModCommCan_OnRxFrame()` 已为强符号直接实现
 - 注释和文档用中文

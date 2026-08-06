@@ -340,7 +340,7 @@
               <MiscControls></MiscControls>
               <Define>STM32F429_439xx,USE_STDPERIPH_DRIVER,APP_SLOT_B</Define>
               <Undefine></Undefine>
-              <IncludePath>..\app;..\driver;..\firmware\cmsis\core;..\firmware\cmsis\device;..\firmware\driver\inc;..\components;..\third_lib\FreeRTOS;..\third_lib\FreeRTOS\inc;..\task;..\protocol;..\bootloader</IncludePath>
+              <IncludePath>..\app;..\driver;..\firmware\cmsis\core;..\firmware\cmsis\device;..\firmware\driver\inc;..\components;..\third_lib\FreeRTOS;..\third_lib\FreeRTOS\inc;..\task;..\mod;..\protocol;..\bootloader</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -479,45 +479,155 @@
               <FileType>5</FileType>
               <FilePath>..\app\bsp_key.h</FilePath>
             </File>
+            <File>
+              <FileName>bsp_spi_lcd.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\app\bsp_spi_lcd.c</FilePath>
+            </File>
+            <File>
+              <FileName>bsp_i2c_touch.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\app\bsp_i2c_touch.c</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>mod</GroupName>
+          <Files>
+            <File>
+              <FileName>mod_can_protocol.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\mod\mod_can_protocol.c</FilePath>
+            </File>
+            <File>
+              <FileName>mod_can_protocol.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\mod\mod_can_protocol.h</FilePath>
+            </File>
+            <File>
+              <FileName>mod_comm_can.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\mod\mod_comm_can.c</FilePath>
+            </File>
+            <File>
+              <FileName>mod_comm_can.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\mod\mod_comm_can.h</FilePath>
+            </File>
+            <File>
+              <FileName>mod_comm_uart.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\mod\mod_comm_uart.c</FilePath>
+            </File>
+            <File>
+              <FileName>mod_comm_uart.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\mod\mod_comm_uart.h</FilePath>
+            </File>
+            <File>
+              <FileName>mod_lcd.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\mod\mod_lcd.c</FilePath>
+            </File>
+            <File>
+              <FileName>mod_lcd.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\mod\mod_lcd.h</FilePath>
+            </File>
+            <File>
+              <FileName>mod_motor.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\mod\mod_motor.c</FilePath>
+            </File>
+            <File>
+              <FileName>mod_motor.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\mod\mod_motor.h</FilePath>
+            </File>
+            <File>
+              <FileName>mod_query.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\mod\mod_query.c</FilePath>
+            </File>
+            <File>
+              <FileName>mod_query.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\mod\mod_query.h</FilePath>
+            </File>
+            <File>
+              <FileName>mod_test.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\mod\mod_test.c</FilePath>
+            </File>
+            <File>
+              <FileName>mod_test.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\mod\mod_test.h</FilePath>
+            </File>
+            <File>
+              <FileName>mod_test_pic.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\mod\mod_test_pic.h</FilePath>
+            </File>
+            <File>
+              <FileName>mod_ui.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\mod\mod_ui.c</FilePath>
+            </File>
+            <File>
+              <FileName>mod_ui.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\mod\mod_ui.h</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
           <GroupName>task</GroupName>
           <Files>
             <File>
-              <FileName>mod_comm_can.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\task\mod_comm_can.c</FilePath>
-            </File>
-            <File>
-              <FileName>mod_comm_can.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>..\task\mod_comm_can.h</FilePath>
-            </File>
-            <File>
               <FileName>task_entry.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\task\task_entry.c</FilePath>
             </File>
             <File>
-              <FileName>task_query.c</FileName>
+              <FileName>task_ui.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\task\task_query.c</FilePath>
+              <FilePath>..\task\task_ui.c</FilePath>
             </File>
             <File>
-              <FileName>task_query.h</FileName>
+              <FileName>task_ui.h</FileName>
               <FileType>5</FileType>
-              <FilePath>..\task\task_query.h</FilePath>
+              <FilePath>..\task\task_ui.h</FilePath>
             </File>
             <File>
-              <FileName>task_comm_can_protocol.c</FileName>
+              <FileName>task_vofa.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\task\task_comm_can_protocol.c</FilePath>
+              <FilePath>..\task\task_vofa.c</FilePath>
             </File>
             <File>
-              <FileName>task_comm_can_protocol.h</FileName>
+              <FileName>task_vofa.h</FileName>
               <FileType>5</FileType>
-              <FilePath>..\task\task_comm_can_protocol.h</FilePath>
+              <FilePath>..\task\task_vofa.h</FilePath>
+            </File>
+            <File>
+              <FileName>task_comm_can.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\task\task_comm_can.c</FilePath>
+            </File>
+            <File>
+              <FileName>task_comm_can.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\task\task_comm_can.h</FilePath>
+            </File>
+            <File>
+              <FileName>task_comm_uart.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\task\task_comm_uart.c</FilePath>
+            </File>
+            <File>
+              <FileName>task_comm_uart.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\task\task_comm_uart.h</FilePath>
             </File>
           </Files>
         </Group>
@@ -545,14 +655,14 @@
               <FilePath>..\driver\usart.h</FilePath>
             </File>
             <File>
-              <FileName>mod_motor.c</FileName>
+              <FileName>usart6.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\driver\mod_motor.c</FilePath>
+              <FilePath>..\driver\usart6.c</FilePath>
             </File>
             <File>
-              <FileName>mod_motor.h</FileName>
+              <FileName>usart6.h</FileName>
               <FileType>5</FileType>
-              <FilePath>..\driver\mod_motor.h</FilePath>
+              <FilePath>..\driver\usart6.h</FilePath>
             </File>
           </Files>
         </Group>
@@ -681,6 +791,16 @@
               <FileName>stm32f4xx_can.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\firmware\driver\src\stm32f4xx_can.c</FilePath>
+            </File>
+            <File>
+              <FileName>stm32f4xx_spi.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\firmware\driver\src\stm32f4xx_spi.c</FilePath>
+            </File>
+            <File>
+              <FileName>stm32f4xx_i2c.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\firmware\driver\src\stm32f4xx_i2c.c</FilePath>
             </File>
           </Files>
         </Group>

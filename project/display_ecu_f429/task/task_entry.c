@@ -5,8 +5,16 @@
 #include "bsp_key.h"
 #include "bsp_led.h"
 #include "bsp_can.h"
+#include "bsp_spi_lcd.h"
+#include "bsp_i2c_touch.h"
 #include "mod_comm_can.h"
-#include "task_query.h"
+#include "mod_comm_uart.h"
+#include "mod_ui.h"
+#include "mod_query.h"
+#include "task_ui.h"
+#include "task_comm_can.h"
+#include "task_comm_uart.h"
+#include "task_vofa.h"   /* VOFA_DEBUG 开关见 task_vofa.h（临时调试） */
 
 void Task_Entry_All(void * pvParameters);
 void Heartbeat_Task(void * pvParameters);
@@ -22,50 +30,66 @@ void Heartbeat_Task(void * pvParameters)
 
     while (1)
     {
-			tick++;
-			GPIO_ToggleBits(LED1_Port, LED1_Pin);
+        tick++;
+        GPIO_ToggleBits(LED1_Port, LED1_Pin);
 
-			if (tick % 2 == 0)
-			{
-					LOG_I("[HEARTBEAT] tick=%u\r\n", tick/2);
-					Can_Heartbeat();
-			}
-			
+        if (tick % 2 == 0)
+        {
+            LOG_I("[HEARTBEAT] tick=%u\r\n", tick / 2);
+            Can_Heartbeat();
+        }
+
         vTaskDelay(pdMS_TO_TICKS(500));
     }
 }
 
 /* ============================================================
- * Task_Entry_All — 一次性的初始化入口
- * 创建所有子任务后自身返回
+ * Task_Entry_All — 一次性初始化入口，创建所有子任务后自删除
  * ============================================================ */
 void Task_Entry_All(void * pvParameters)
 {
     (void)pvParameters;
 
+    /* ---- BSP 硬件初始化 ---- */
     BSP_LED_Init();
     BSP_KEY_Init();
-    /* 先创建 CAN 收发队列，再初始化 CAN 硬件并使能接收中断，
-     * 确保接收中断触发时队列已就绪（避免首帧丢失） */
-    Mod_Can_Init();
+
+    Mod_Can_Init();        /* 先创建队列，再初始化硬件使能中断 */
     BSP_CAN_Init();
 
-    /* 栈大小经过评估：
-     * CAN_TX/RX: 512 字 = 2KB（队列收发 + 硬件调用）
-     * CAN_TEST/KEY_SCAN: 256 字 = 1KB（简单轮询）
-     * HEARTBEAT: 512 字 = 2KB（printf/vsprintf 栈开销大） */
-    if (xTaskCreate(Mod_Can_TxTask, "CAN_TX", 512, NULL, 3, NULL) != pdPASS)
+    Mod_Uart_Init();       /* 创建 UART 收发队列（UART_Init 硬件已在 main 中完成） */
+    Mod_Query_Init();      /* 查询协议业务初始化（确保 mod_query 被链接） */
+
+    BSP_SPI_LCD_Init();    /* SPI5 + ILI9341 */
+    BSP_I2C_Touch_Init();  /* I2C1 + FT6336G */
+    Dashboard_Data_Init(); /* 在 CAN 子任务启动前创建共享状态和互斥锁 */
+
+    /* ---- 创建 FreeRTOS 任务 ----
+     * CAN_TX/RX:  512 字（队列收发 + 硬件调用）
+     * CAN_TEST:   256 字（简单轮询）
+     * KEY_SCAN:   256 字（GPIO 轮询）
+     * HEARTBEAT:  512 字（printf/vsprintf 栈开销大）
+     * UART_TX:    256 字（TX 队列消费 + 串口发送）
+     * UART_RX:    256 字（字节队列 + 拼包 + 业务回调）
+     * UI:        1024 字（LVGL 渲染开销大） */
+    if (xTaskCreate(Task_CanTx,       "CAN_TX",     512, NULL, 4, NULL) != pdPASS)
         LOG_E("[Main] CAN_TX task create failed!\r\n");
-    if (xTaskCreate(Mod_Can_RxTask, "CAN_RX", 512, NULL, 3, NULL) != pdPASS)
+    if (xTaskCreate(Task_CanRx,       "CAN_RX",     512, NULL, 4, NULL) != pdPASS)
         LOG_E("[Main] CAN_RX task create failed!\r\n");
-    if (xTaskCreate(CAN_Test_Task,  "CAN_TEST", 256, NULL, 3, NULL) != pdPASS)
-        LOG_E("[Main] CAN_TEST task create failed!\r\n");
-    if (xTaskCreate(prvKeyScanTask, "KEY_SCAN", 256, NULL, 2, NULL) != pdPASS)
+    if (xTaskCreate(prvKeyScanTask,   "KEY_SCAN",   256, NULL, 2, NULL) != pdPASS)
         LOG_E("[Main] KEY_SCAN task create failed!\r\n");
-    if (xTaskCreate(Heartbeat_Task, "HEARTBEAT", 512, NULL, 1, NULL) != pdPASS)
+    if (xTaskCreate(Heartbeat_Task,   "HEARTBEAT",  512, NULL, 1, NULL) != pdPASS)
         LOG_E("[Main] HEARTBEAT task create failed!\r\n");
-    if (xTaskCreate(UART_Query_Task, "UART_QUERY", 256, NULL, 2, NULL) != pdPASS)
-        LOG_E("[Main] UART_QUERY task create failed!\r\n");
+    if (xTaskCreate(Task_UartTx,      "UART_TX",    256, NULL, 4, NULL) != pdPASS)
+        LOG_E("[Main] UART_TX task create failed!\r\n");
+    if (xTaskCreate(Task_UartRx,      "UART_RX",    256, NULL, 4, NULL) != pdPASS)
+        LOG_E("[Main] UART_RX task create failed!\r\n");
+    if (xTaskCreate(Task_UI,          "UI",       1024, NULL, 3, NULL) != pdPASS)
+        LOG_E("[Main] UI task create failed!\r\n");
+#if VOFA_DEBUG
+    if (xTaskCreate(Vofa_Task,       "VOFA",      256, NULL, 4, NULL) != pdPASS)
+        LOG_E("[Main] VOFA task create failed!\r\n");
+#endif
 
     vTaskDelete(NULL);
 }

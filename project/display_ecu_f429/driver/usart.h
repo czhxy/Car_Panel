@@ -6,7 +6,6 @@
 
 void UART_Init(void);
 int  UART_ReceiveByte(void);                     // 非阻塞: 返回字节(0-255)或-1(无数据)
-int  UART_RxGet(void);                           // 从中断接收环形缓冲区取一字节
 void UART_SendByte(uint8_t Byte);
 void UART_SendArray(const uint8_t *Array, uint16_t Length);
 void UART_SendString(const char *String);
