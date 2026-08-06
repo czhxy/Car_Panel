@@ -157,28 +157,27 @@ void ModCommCan_OnRxFrame(const CanRxMsg *rx_msg)
 
     case MODE_ID_STATUS_MOTOR:
     {
-        if (rx_msg->DLC < 7U) {
+        if (rx_msg->DLC < 8U) {
             break;
         }
 
-        /* 电机状态帧 (0x110): [rpm_L, rpm_H, status, odo_0, odo_1, odo_2, odo_3, 0]
-         * 待动力域正式实现后确认格式 */
-        uint16_t rpm     = ((uint16_t)rx_msg->Data[1] << 8) | rx_msg->Data[0];
-        uint8_t  status  = rx_msg->Data[2];
-        uint32_t odo     = ((uint32_t)rx_msg->Data[6] << 24) |
-                           ((uint32_t)rx_msg->Data[5] << 16) |
-                           ((uint32_t)rx_msg->Data[4] << 8)  |
-                            rx_msg->Data[3];
+        /* 电机状态帧 (0x110): CanStatusMotor 真实线序（packed 小端）
+         * [0..1]=speed(×10 rpm) [2..3]=current(mA) [4..5]=angle(°×10)
+         * [6]=status [7]=temp；当前仅取 rpm，其余字段暂不关注 */
+        CanStatusMotor st;
+        memcpy(&st, rx_msg->Data, sizeof(st));
+
+        int16_t  speed = st.motor_speed;              /* rpm×10 */
+        uint16_t rpm   = (uint16_t)(speed > 0 ? speed / 10 : 0);
 
         Dashboard_Data_Lock();
         g_dash_state.rpm          = rpm;
-        g_dash_state.motor_status = status;
-        g_dash_state.odo_value    = odo;
+        g_dash_state.motor_status = 0;   /* 暂不解析 */
+        g_dash_state.odo_value    = 0;   /* 动力域暂无里程字段 */
         g_dash_state.motor_online = true;
         Dashboard_Data_Unlock();
 
-        LOG_D("[CAN] Motor status: rpm=%u status=0x%02X odo=%lu\r\n",
-              rpm, status, (unsigned long)odo);
+        LOG_D("[CAN] Motor status: rpm=%u\r\n", rpm);
         break;
     }
 
@@ -260,24 +259,23 @@ void Mod_Can_TxTest(void)
 }
 void Can_Heartbeat(void)
 {
-    static uint32_t sHeartbeatCnt = 0;
     ModCanFrame frame;
+    CanHeartbeatData hb;
 
     memset(&frame, 0, sizeof(frame));
-    frame.id  = CAN_HEARTBEAT_ID;
+    memset(&hb, 0, sizeof(hb));
+
+    /* 心跳帧与动力域统一为 mode_id=0x320 + CanHeartbeatData 载荷 */
+    hb.status     = 0x00;   /* 显示域状态: 0=正常 */
+    hb.uptime     = (uint16_t)(xTaskGetTickCount() / pdMS_TO_TICKS(1000U));
+    hb.error_code = 0x00;   /* 显示域暂不上报故障 */
+
+    frame.id  = CAN_ID_BUILD(CAN_PRIO_HEARTBEAT, CAN_SELF_ADDR, CAN_ADDR_BROADCAST,
+                             CAN_FTYPE_NORMAL, MODE_ID_HEARTBEAT, 0x00U);
     frame.ide = MOD_CAN_IDE_EXT;
     frame.rtr = MOD_CAN_RTR_DATA;
-    frame.dlc = 8;
-
-    sHeartbeatCnt++;
-    frame.data[0] = (uint8_t)(sHeartbeatCnt);
-    frame.data[1] = (uint8_t)(sHeartbeatCnt >> 8);
-    frame.data[2] = (uint8_t)(sHeartbeatCnt >> 16);
-    frame.data[3] = (uint8_t)(sHeartbeatCnt >> 24);
-    frame.data[4] = 0x00;   /* 设备状态: 0=正常 */
-    frame.data[5] = 0x00;   /* 预留 */
-    frame.data[6] = 0x00;   /* 预留 */
-    frame.data[7] = 0x00;   /* 预留 */
+    frame.dlc = (uint8_t)sizeof(hb);
+    memcpy(frame.data, &hb, sizeof(hb));
 
     Mod_Can_TxEvent(&frame);
 }

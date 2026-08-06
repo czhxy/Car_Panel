@@ -130,7 +130,6 @@ extern "C" {
  * 预置 CAN ID
  * ================================================================ */
 #define CAN_TX_ID         CAN_ID_BUILD(CAN_PRIO_ALERT,     CAN_SELF_ADDR, CAN_ADDR_BROADCAST, CAN_FTYPE_NORMAL, 0x001, 0x01)
-#define CAN_HEARTBEAT_ID  CAN_ID_BUILD(CAN_PRIO_HEARTBEAT, CAN_SELF_ADDR, CAN_ADDR_BROADCAST, CAN_FTYPE_NORMAL, 0x000, 0x01)
 
 /* ================================================================
  * CanProtocolId — 协议 ID 结构化编解码
@@ -183,8 +182,12 @@ static inline uint32_t CanProto_MakeId(uint8_t prio, uint8_t src, uint8_t dst,
 }
 
 /* ================================================================
- * 电机控制帧数据载荷结构（mode_id=0x020）
- * [速度L, 速度H, 电流L, 电流H, 角度L, 角度H, 0, 0]
+ * 电机控制帧数据载荷结构（mode_id=0x020，显示域→动力域）
+ * ⚠ 注意：此结构体仅供参考，与显示域实际线序【不一致】，收发请按裸字节处理！
+ *   显示域 CanProtocol_WheelCtlSend() 实际发送线序(小端)：
+ *     data[0..1] = speed_enc(rpm×10)  data[2..3] = angle_enc(°×10，当前填 0)
+ *     data[4..7] = 0
+ *   即 byte2-3 在线上是 angle，不是本结构体里的 motor_current，且【无电流字段】。
  * ================================================================ */
 typedef struct {
     int16_t   motor_speed;       /* 电机转速 */
@@ -202,6 +205,19 @@ typedef struct {
     uint16_t  error_code;
     uint8_t   reserved[3];
 } __attribute__((packed)) CanHeartbeatData;
+
+/* ================================================================
+ * 电机状态帧数据载荷结构（mode_id=0x110，动力域→显示域，20ms）
+ * 线序(小端, 与控制帧速度/角度同样用 ×10 编码)：
+ *   [speedL H(rpm×10), currentL H(mA), angleL H(°×10), status, temp]
+ * ================================================================ */
+typedef struct {
+    int16_t   motor_speed;       /* [0-1] 实测转速 ×10 rpm */
+    int16_t   motor_current;     /* [2-3] 实测电流 mA */
+    int16_t   encoder_angle;     /* [4-5] 编码器角度 ×10 ° */
+    uint8_t   status;            /* [6] 运行状态位 */
+    uint8_t   temperature;       /* [7] 温度 ℃ */
+} __attribute__((packed)) CanStatusMotor;
 
 #ifdef __cplusplus
 }

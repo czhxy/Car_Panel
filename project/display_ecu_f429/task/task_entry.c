@@ -14,7 +14,6 @@
 #include "task_ui.h"
 #include "task_comm_can.h"
 #include "task_comm_uart.h"
-#include "task_vofa.h"   /* VOFA_DEBUG 开关见 task_vofa.h（临时调试） */
 
 void Task_Entry_All(void * pvParameters);
 void Heartbeat_Task(void * pvParameters);
@@ -86,10 +85,6 @@ void Task_Entry_All(void * pvParameters)
         LOG_E("[Main] UART_RX task create failed!\r\n");
     if (xTaskCreate(Task_UI,          "UI",       1024, NULL, 3, NULL) != pdPASS)
         LOG_E("[Main] UI task create failed!\r\n");
-#if VOFA_DEBUG
-    if (xTaskCreate(Vofa_Task,       "VOFA",      256, NULL, 4, NULL) != pdPASS)
-        LOG_E("[Main] VOFA task create failed!\r\n");
-#endif
 
     vTaskDelete(NULL);
 }

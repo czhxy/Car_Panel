@@ -52,7 +52,7 @@ display_ecu_f429/
 | 最小栈 | 128 字 |
 | FPU | 启用 |
 
-**已创建的任务**（`task/task_entry.c` 创建；不含 VOFA 共 8 个 = 1 一次性初始化入口 + 7 常驻业务任务）：
+**已创建的任务**（`task/task_entry.c` 创建；共 8 个 = 1 一次性初始化入口 + 7 常驻业务任务）：
 
 | 任务 | 栈 | 优先级 | 函数 | 说明 |
 |---|---|---|---|---|
@@ -64,9 +64,9 @@ display_ecu_f429/
 | UART_TX | 256 字 | 4 | `Task_UartTx` | TX 包队列消费 + 串口发送 |
 | UART_RX | 256 字 | 4 | `Task_UartRx` | 字节队列 + 拼包状态机 + 业务回调 |
 | UI | 1024 字 | 3 | `Task_UI` | LVGL 渲染（5ms 轮询）+ 25ms 数据刷新 |
-| VOFA | 256 字 | 4 | `Vofa_Task` | `#if VOFA_DEBUG` 条件创建，临时调试（默认开） |
 
 > `Task_CanTest`（CAN_TEST）已注释不创建，函数保留供 KEY1 测试复用。
+> VOFA 调试任务（USART6 + task_vofa）已于 2026-08-07 清理删除。
 
 ## CAN 通信架构
 
@@ -102,7 +102,7 @@ RX: CAN FIFO0 ISR → Mod_Can_RxIRQHandler() → CanRxQueue (FreeRTOS队列, 深
 | 帧 | 函数 | 周期 | 内容 |
 |---|---|---|---|
 | 心跳 | `Can_Heartbeat()` | 500ms | 4 字节计数 + 4 字节状态 |
-| 电机控制 | `CanProtocol_WheelCtlSend()` | 10ms 限频 | rpm_target（拖动条 0–100 ×3 → 0–300 RPM，×10 编码），data[7]=3 |
+| 电机控制 | `CanProtocol_WheelCtlSend()` | 10ms 限频 | rpm_target（拖动条 0–100 ×3 → 0–300 RPM，×10 编码），线序与动力域 `CanCtrlMotor` 对齐（data[4..7]=0，无魔数） |
 | 测试帧 | `Mod_Can_TxTest()` | 按键触发 | 8 字节递增测试数据 |
 
 ## 引脚分配

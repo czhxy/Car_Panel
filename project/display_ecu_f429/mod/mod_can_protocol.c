@@ -47,11 +47,9 @@ void CanProtocol_WheelCtlSend(void)
     data[0] = (uint8_t)(speed_enc & 0xFF);
     data[1] = (uint8_t)((speed_enc >> 8) & 0xFF);
 
-    /* 角度不再上报，直接填 0 */
+    /* 角度不再上报，直接填 0；data[4..7] 保持 0，线序干净 */
     data[2] = 0;
     data[3] = 0;
-
-    data[7] = 3;
 
     CanProto_SendFrame(CAN_PRIO_REALTIME, CAN_ADDR_MOTORBOARD,
                        CAN_FTYPE_NORMAL, MODE_ID_CTRL_LF, 0, data, 8);
