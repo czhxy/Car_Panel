@@ -220,7 +220,6 @@ void Mod_Can_TxTask(void *pvParameters)
         ModCommCan_Tx();               /* ① 数据发送：统一消费 TX 队列 */
         // CanProtocol_HeartbeatCheck();   /* 预留 */
         CanProtocol_WheelCtlSend();    /* ② 数据推送：电机控制帧（10ms 限频）*/
-        CanProtocol_WheelDebugQuery(); /* ② 数据推送：电机调试查询（占位）*/
         vTaskDelay(pdMS_TO_TICKS(1));  /* ③ 让出 CPU */
     }
 }

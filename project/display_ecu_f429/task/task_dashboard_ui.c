@@ -9,7 +9,8 @@
  * + "CAN" 文本框(lv_label)，在线绿色闪烁 / 离线红色常亮。
  *
  * RPM 显示：由底部 Load Bar 拖动条控制（0–100 → 0–300 RPM，×3），
- * 显示 g_dash_state.rpm_target，拖动时同步发送 CAN 目标转速帧。
+ * 显示 g_dash_state.rpm_target。拖动条只更新数据源 rpm_target，
+ * CAN 周期帧 CanProtocol_WheelCtlSend() 读取并以 ×10 编码发送。
  *
  * Pause 按钮：仪表盘与 Load Bar 之间的红色圆角矩形，一键暂停/恢复。
  * 暂停时 rpm_target 归 0、滑块回 0 并锁定，恢复时回到暂停前位置。
@@ -18,8 +19,6 @@
 #include "task_dashboard_ui.h"
 #include "mod_dashboard_data.h"
 #include "mod_dashboard_fault.h"
-#include "mod_comm_can.h"
-#include "task_comm_can_protocol.h"
 #include "dashboard_images.h"
 #include "bsp_log.h"
 #include <stdio.h>
@@ -124,20 +123,8 @@ static void set_error_box_style(bool is_fault, uint16_t error_code)
  * 事件回调
  * ============================================================ */
 
-/* 发送目标转速 CAN 帧（target 单位: RPM） */
-static void send_rpm_target(uint16_t target)
-{
-    uint8_t data[8];
-    memset(data, 0, sizeof(data));
-    int16_t speed_enc = (int16_t)target;
-    data[0] = (uint8_t)(speed_enc & 0xFF);
-    data[1] = (uint8_t)((speed_enc >> 8) & 0xFF);
-    data[7] = 3;
-    CanProto_SendFrame(CAN_PRIO_REALTIME, CAN_ADDR_MOTORBOARD,
-                       CAN_FTYPE_NORMAL, MODE_ID_CTRL_LF, 0, data, 8);
-}
-
-/* Load Bar 值变化 → 更新 g_dash_state.rpm_target 并发送 CAN 帧 */
+/* Load Bar 值变化 → 仅更新 g_dash_state.rpm_target（数据源），
+ * CAN 周期帧 CanProtocol_WheelCtlSend() 从中读取并以 ×10 编码发送 */
 static void on_load_change(lv_event_t *e)
 {
     lv_obj_t *slider = lv_event_get_target(e);
@@ -153,8 +140,6 @@ static void on_load_change(lv_event_t *e)
     uint16_t target = g_dash_state.rpm_target;
     Dashboard_Data_Unlock();
 
-    send_rpm_target(target);
-
     /* 更新滑块上方标签 */
     if (s_load_label != NULL) {
         char buf[16];
@@ -164,8 +149,9 @@ static void on_load_change(lv_event_t *e)
 }
 
 /* 一键暂停按钮 → 切换暂停状态
- *  进入暂停: 保存当前滑块位置 → rpm_target 归 0 → 滑块回 0 并锁定 → 发 CAN 0 帧
- *  解除暂停: 滑块回到暂停前位置 → rpm_target 恢复原值 → 发 CAN 原值帧 */
+ *  进入暂停: 保存当前滑块位置 → rpm_target 归 0 → 滑块回 0 并锁定
+ *  解除暂停: 滑块回到暂停前位置 → rpm_target 恢复原值
+ *  下发由 CAN 周期帧读取 rpm_target 完成 */
 static void on_pause_click(lv_event_t *e)
 {
     (void)e;
@@ -203,8 +189,6 @@ static void on_pause_click(lv_event_t *e)
         snprintf(buf, sizeof(buf), "%u RPM", target);
         lv_label_set_text(s_load_label, buf);
     }
-
-    send_rpm_target(target);
 }
 
 /* 左转向灯 → 选中上一个卡片 */
@@ -589,8 +573,8 @@ void Dashboard_Update(void)
     }
 
     /* ---- RPM 数值 ----
-     * 由拖动条控制：显示 rpm_target（0–100 ×3 → 0–300 RPM）。
-     * 不再直接显示 CAN 实测 rpm，避免被状态帧覆盖。 */
+     * 暂以拖动条值 rpm_target 显示（0–100 ×3 → 0–300 RPM）。
+     * 后续改为显示动力域实测 rpm（CAN 状态帧 0x110 上报）。 */
     if (s_rpm_label != NULL) {
         char buf[8];
         snprintf(buf, sizeof(buf), "%u", snap.rpm_target);

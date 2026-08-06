@@ -38,8 +38,7 @@ void CanProtocol_WheelCtlSend(void)
     }
     last_send_tick = now;
 
-    float speed = Mod_Motor_Get_Speed();
-    float angle = Mod_Motor_Angle();
+    float speed = Mod_Motor_Get_Speed();   /* LVGL 仪表盘 rpm_target */
 
     uint8_t data[8];
     memset(data, 0, sizeof(data));
@@ -48,21 +47,12 @@ void CanProtocol_WheelCtlSend(void)
     data[0] = (uint8_t)(speed_enc & 0xFF);
     data[1] = (uint8_t)((speed_enc >> 8) & 0xFF);
 
-    int16_t angle_enc = (int16_t)(angle * 10.0f);
-    data[2] = (uint8_t)(angle_enc & 0xFF);
-    data[3] = (uint8_t)((angle_enc >> 8) & 0xFF);
+    /* 角度不再上报，直接填 0 */
+    data[2] = 0;
+    data[3] = 0;
 
     data[7] = 3;
 
     CanProto_SendFrame(CAN_PRIO_REALTIME, CAN_ADDR_MOTORBOARD,
                        CAN_FTYPE_NORMAL, MODE_ID_CTRL_LF, 0, data, 8);
-}
-
-/* ============================================================
- * CanProtocol_WheelDebugQuery — 电机调试查询占位
- * 待定义调试查询协议后，在此构造帧并 CanProto_SendFrame(...) 入队
- * ============================================================ */
-void CanProtocol_WheelDebugQuery(void)
-{
-    /* 占位：待定义调试查询协议后，在此构造帧并 CanProto_SendFrame(...) 入队 */
 }
