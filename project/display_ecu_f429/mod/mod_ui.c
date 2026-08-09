@@ -35,7 +35,7 @@ void Dashboard_Data_Init(void)
     g_dash_state.load_pct       = 42;
     g_dash_state.rpm_target     = 126;   /* 42% of 300 */
     g_dash_state.selected_card  = DASH_CARD_ODO;
-    g_dash_state.rpm            = 6800;
+    g_dash_state.rpm            = 520;
     g_dash_state.error_code     = 0;
     g_dash_state.motor_online   = false;
     g_dash_state.last_hb_tick   = xTaskGetTickCount();

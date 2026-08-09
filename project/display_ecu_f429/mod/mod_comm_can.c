@@ -24,6 +24,23 @@ static struct {
     uint8_t rx_err_count;
 } event_err_count;
 
+/* ---- 发送故障检测与自动恢复状态机 ----
+ * CAN_Transmit 返回 NoMailBox 仅说明 3 个硬件邮箱当前都被占；正常总线下一瞬
+ * 即空。若总线故障（对端无 ACK / 线断 / bus-off），发不出的帧会一直占住邮箱，
+ * 导致 ModCommCan_Tx 无限重试 + 队头死锁。软件兜底：
+ *   连续 NoMailBox 达阈值 → 撤掉卡死邮箱 + 清空 TX 队列 → 进入恢复期；
+ *   恢复期后自动重试（总线本身由硬件 CAN_ABOM 恢复）。
+ * ---- */
+#define CAN_TX_FAULT_THRESHOLD   20      /* 连续 NoMailBox 判定故障（≈20ms @1ms 轮询） */
+#define CAN_TX_FAULT_HOLD_MS     1000    /* 故障后恢复期，给总线稳定时间 */
+#define CAN_TX_FULL_LOG_MS       5000    /* 入队满日志限频间隔 */
+
+static struct {
+    bool       fault;              /* 1=处于发送故障恢复期 */
+    uint16_t   no_mailbox_count;   /* 连续 NoMailBox 计数 */
+    TickType_t fault_enter_tick;   /* 进入故障的时刻（恢复判据） */
+} s_tx_fault;
+
 /* ---- 统计变量（非静态，供外部只读访问） ---- */
 const uint8_t *ModCan_TxErrCount  = &event_err_count.tx_err_count;
 const uint8_t *ModCan_RxErrCount  = &event_err_count.rx_err_count;
@@ -41,6 +58,22 @@ void Mod_Can_Init(void)
 }
 
 /* ============================================================
+ * TxLogQueueFull — 入队满限频日志
+ * 避免队列持续满时每帧失败刷屏，最多每 CAN_TX_FULL_LOG_MS 打一条
+ * ============================================================ */
+static void TxLogQueueFull(void)
+{
+    static TickType_t last_log_tick = 0;
+    TickType_t now = xTaskGetTickCount();
+
+    if ((now - last_log_tick) >= pdMS_TO_TICKS(CAN_TX_FULL_LOG_MS)) {
+        last_log_tick = now;
+        LOG_W("[CAN] TX queue full, frame dropped (drop_count=%u)\r\n",
+              (unsigned int)event_err_count.tx_err_count);
+    }
+}
+
+/* ============================================================
  * Mod_Can_TxEvent — 非阻塞入 TX 队列
  * 队列满时返回 false 并累计 tx_err_count（有界队列的正常背压行为）
  * ============================================================ */
@@ -49,6 +82,7 @@ bool Mod_Can_TxEvent(const ModCanFrame *frame)
     if (CanTxQueue == NULL || frame == NULL) { return false; }
     if (xQueueSend(CanTxQueue, frame, 0) == pdPASS) { return true; }
     event_err_count.tx_err_count++;
+    TxLogQueueFull();
     return false;
 }
 
@@ -188,15 +222,51 @@ void ModCommCan_OnRxFrame(const CanRxMsg *rx_msg)
 }
 
 /* ============================================================
+ * CanRecoverTxFault — 发送故障恢复
+ * ① 撤掉 3 个邮箱中 pending 的帧，置 TME 空出邮箱（配合硬件 ABOM 恢复总线）
+ * ② 清空积压 TX 队列：控制帧只保留"最新值"语义，旧帧无需继续发送
+ * ③ 进入恢复期；恢复期过后 ModCommCan_Tx 自动重新发送
+ * ============================================================ */
+static void CanRecoverTxFault(void)
+{
+    uint8_t mb;
+
+    for (mb = 0; mb < 3; mb++) {
+        CAN_CancelTransmit(CAN1, mb);   /* 写 TSR.ABRQx，取消 pending 发送 */
+    }
+    if (CanTxQueue != NULL) {
+        xQueueReset(CanTxQueue);        /* 丢弃积压帧，解除队头死锁 */
+    }
+    s_tx_fault.fault = true;
+    s_tx_fault.no_mailbox_count = 0;
+    s_tx_fault.fault_enter_tick = xTaskGetTickCount();
+
+    LOG_W("[CAN] TX bus fault (mailboxes stuck): abort+flush queue, hold %u ms\r\n",
+          (unsigned int)CAN_TX_FAULT_HOLD_MS);
+}
+
+/* ============================================================
  * ModCommCan_Tx — 统一消费 TX 队列，提交硬件发送
  * 用 xQueuePeek 而非"取出后回灌队首"：先看队首帧，发送成功才出队；
  * 邮箱满则不取出、帧留在队首下一轮再试。相比回灌方案：
  *   - 不存在 xQueueSendToFront 回灌失败导致的静默丢帧；
  *   - 不存在回灌队首造成的乱序插队（旧帧插到新帧前面）。
  * 队列空立即返回。
+ * 总线故障兜底：连续 NoMailBox 达阈值 → CanRecoverTxFault，恢复期内暂停发送。
  * ============================================================ */
 void ModCommCan_Tx(void)
 {
+    /* 故障恢复期：暂停发送，给总线/对端稳定时间，期满自动重试 */
+    if (s_tx_fault.fault) {
+        if ((xTaskGetTickCount() - s_tx_fault.fault_enter_tick) <
+            pdMS_TO_TICKS(CAN_TX_FAULT_HOLD_MS)) {
+            return;   /* 恢复期内不发送 */
+        }
+        s_tx_fault.fault = false;
+        s_tx_fault.no_mailbox_count = 0;
+        LOG_I("[CAN] TX bus recovered, resume sending\r\n");
+    }
+
     ModCanFrame frame;
     while (xQueuePeek(CanTxQueue, &frame, 0) == pdPASS) {
         CanTxMsg tx_msg;
@@ -213,7 +283,11 @@ void ModCommCan_Tx(void)
         memcpy(tx_msg.Data, frame.data, tx_msg.DLC);
 
         if (CAN_Transmit(CAN1, &tx_msg) == CAN_TxStatus_NoMailBox) {
-            break;   /* 邮箱满：帧留在队首，下一轮再试 */
+            /* 连续 NoMailBox 达阈值：判定总线故障，撤卡死邮箱并清队列 */
+            if (++s_tx_fault.no_mailbox_count >= CAN_TX_FAULT_THRESHOLD) {
+                CanRecoverTxFault();
+            }
+            break;   /* 帧留在队首，下一轮再试（恢复期内由上方 return 挡着） */
         }
         xQueueReceive(CanTxQueue, &frame, 0);   /* 发送成功，出队 */
     }
