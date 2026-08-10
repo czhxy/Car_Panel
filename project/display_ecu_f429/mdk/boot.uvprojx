@@ -48,7 +48,7 @@
             <NotGenerated>0</NotGenerated>
             <InvalidFlash>1</InvalidFlash>
           </TargetStatus>
-          <OutputDirectory>.\Objects\</OutputDirectory>
+          <OutputDirectory>.\Objects_boot\</OutputDirectory>
           <OutputName>boot</OutputName>
           <CreateExecutable>1</CreateExecutable>
           <CreateLib>0</CreateLib>
@@ -460,9 +460,19 @@
               <FilePath>..\bootloader\ota_params.h</FilePath>
             </File>
             <File>
+              <FileName>boot_query.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\bootloader\boot_query.c</FilePath>
+            </File>
+            <File>
               <FileName>ymodem.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\bootloader\ymodem.c</FilePath>
+            </File>
+            <File>
+              <FileName>boot_query.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\bootloader\boot_query.h</FilePath>
             </File>
             <File>
               <FileName>ymodem.h</FileName>

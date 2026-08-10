@@ -11,7 +11,7 @@
 | MCU | STM32F429IGT6 (Cortex-M4, FPU) |
 | 主频 | 180MHz（HSE 8MHz → PLL ×180） |
 | Flash | 2MB（项目使用前 1MB） |
-| RAM | 128KB 主 SRAM + 64KB CCM |
+| RAM | 192KB 主 SRAM + 64KB CCM |
 | RTOS | FreeRTOS v11.3.0（heap_4, 64KB CCM 堆） |
 | Bootloader | 有（YMODEM OTA，真 AB 分区） |
 

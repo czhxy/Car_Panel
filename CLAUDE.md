@@ -34,7 +34,7 @@
 ## RAM 区划
 
 ```
-0x20000000 - 0x2001FFFF   主 SRAM 128KB    DMA 缓冲/全局/栈
+0x20000000 - 0x2002FFFF   主 SRAM 192KB    DMA 缓冲/全局/栈（SRAM1 112K + SRAM2 16K + SRAM3 64K，地址连续）
 0x10000000 - 0x1000FFFF   CCM 64KB        FreeRTOS 堆 (heap_4 ucHeap)
 ```
 

@@ -117,7 +117,7 @@ uint32_t crc32_flash(uint32_t addr, uint32_t len)
 //   每槽 64B，共 1024 槽；每条记录 = magic(4) + seq(4) + ota_param_t(52) + crc(4) = 64B
 // ============================================================
 #define OTA_LOG_ADDR        OTA_PARAM_ADDR            // 0x08010000
-#define OTA_LOG_SIZE        0x00010000U               // 64KB（整扇区）
+#define OTA_LOG_SIZE        OTA_PARAM_SIZE            // 64KB（整扇区，引用 boot_config.h 统一）
 #define OTA_SLOT_SIZE       64U
 #define OTA_SLOT_COUNT      (OTA_LOG_SIZE / OTA_SLOT_SIZE)   // 1024
 

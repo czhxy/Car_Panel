@@ -11,9 +11,9 @@
 #define BOOTLOADER_ADDR         0x08000000U
 #define BOOTLOADER_SIZE         0x00010000U  // 64KB
 
-// OTA Parameter: 16KB (位于 Sector 4, 64KB 扇区内)
+// OTA Parameter: 64KB (Sector 4 整扇区, append-only 日志)
 #define OTA_PARAM_ADDR          0x08010000U
-#define OTA_PARAM_SIZE          0x00004000U  // 16KB (逻辑大小, 擦除整扇区 64KB)
+#define OTA_PARAM_SIZE          0x00010000U  // 64KB (整扇区, 1024 槽 × 64B)
 
 // App A: 384KB (Sector 5-7, 3×128KB, 避免与 App B 共享 Sector 8)
 #define APP_A_ADDR              0x08020000U

@@ -10,7 +10,7 @@ LR_IROM1 0x08080000 0x00060000  {    ; 加载区：App B 384KB
    startup_*.o (+RO)
    .ANY (+RO)
   }
-  RW_IRAM1 0x20000000 0x00020000  {  ; 128KB 主 SRAM (SRAM1 112KB + SRAM2 16KB)；外设/DMA 缓冲与一般数据
+  RW_IRAM1 0x20000000 0x00030000  {  ; 192KB 主 SRAM (SRAM1 112KB + SRAM2 16KB + SRAM3 64KB)；外设/DMA 缓冲与一般数据
    .ANY (+RW +ZI)
   }
   ; ---- CCM 64KB @0x10000000：仅 CPU 可访问，DMA 不可达 ----

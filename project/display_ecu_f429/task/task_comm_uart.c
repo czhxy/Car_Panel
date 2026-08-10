@@ -9,6 +9,7 @@
 
 #include "task_comm_uart.h"
 #include "mod_comm_uart.h"
+#include "bsp_log.h"
 #include "FreeRTOS.h"
 #include "task.h"
 

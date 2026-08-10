@@ -50,7 +50,7 @@
 |------|-----|
 | MCU | STM32F429IGT6, Cortex-M4 @ 180MHz |
 | Flash | 2MB（项目使用前 1MB：Bootloader 64KB + OTA 参数 64KB + App A 384KB + App B 384KB + 预留 128KB） |
-| RAM | 芯片物理资源为 192KB 主 SRAM + 64KB CCM；当前工程 scatter 仅使用 128KB 主 SRAM + 64KB CCM |
+| RAM | 芯片物理资源为 192KB 主 SRAM + 64KB CCM；当前工程 scatter 使用 192KB 主 SRAM + 64KB CCM |
 | RTOS | FreeRTOS v11.3.0 (heap_4, 64KB CCM 堆) |
 | 显示屏 | MSP2834（2.8 寸 IPS, ILI9341V, 240×320 RGB565, SPI2） |
 | 触摸 | FT6336G 电容触摸 (I2C1, 400kHz) |
@@ -67,7 +67,7 @@
 |------|------|------|-------------|
 | 主频 | STM32F429IGT6 | 180 MHz | LQFP176，正常运行 |
 | Flash | 片上 | 2MB（使用 1MB） | A/B 分区 OTA |
-| RAM | 片上 | 192KB 主 SRAM + 64KB CCM | 当前工程仅映射 128KB 主 SRAM；CCM=FreeRTOS 堆，主 SRAM=DMA/全局 |
+| RAM | 片上 | 192KB 主 SRAM + 64KB CCM | 当前工程映射 192KB 主 SRAM；CCM=FreeRTOS 堆，主 SRAM=DMA/全局 |
 | SPI2 | 片上 | APB1 @ 45MHz | **MSP2834 LCD (ILI9341V)** |
 | I2C1 | 片上 | APB1 @ 45MHz | **FT6336G 触摸 (400kHz)** |
 | CAN1 | 片上 | 500kbps, PA11/PA12 默认引脚 | CAN 收发器 TJA1050 |
@@ -209,13 +209,13 @@ F429 VDDA → 模拟电源（磁珠隔离）
 ### 5.2 RAM 分区
 
 ```
-0x20000000 - 0x2001FFFF   当前映射的主 SRAM 128KB    DMA 缓冲 / 全局变量 / 栈
+0x20000000 - 0x2002FFFF   当前映射的主 SRAM 192KB    DMA 缓冲 / 全局变量 / 栈
 0x10000000 - 0x1000FFFF   CCM 64KB         FreeRTOS 堆 (heap_4 ucHeap)
 ```
 
 - LVGL 双缓冲（28.8KB）分配在主 SRAM（`0x2000xxxx`），CCM 无法被 DMA 访问
 - FreeRTOS 堆位于 CCM，不与 DMA 缓冲竞争
-- 芯片剩余的 64KB 主 SRAM 当前未纳入 scatter 文件，不能在现有工程中直接假定可用
+- 主 SRAM 192KB 已全部纳入 scatter（`RW_IRAM1 0x20000000 0x00030000`），SRAM1/SRAM2/SRAM3 地址连续可直接使用
 
 ### 5.3 外部存储（不使用）
 

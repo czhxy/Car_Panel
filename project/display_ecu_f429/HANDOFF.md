@@ -319,8 +319,8 @@ CAN_RX Task (prio 4)             LCD_DEMO Task (prio 3)
 | LVGL 内存池 | 48KB |
 | 双缓冲 | 38.4KB |
 | **合计 LVGL** | **~86KB** |
-| 主 SRAM 总量 | 128KB |
-| 剩余给 FreeRTOS + 栈 + CAN 队列 | ~42KB |
+| 主 SRAM 总量 | 192KB |
+| 剩余给 FreeRTOS + 栈 + CAN 队列 | ~106KB |
 
 ### Keil 工程 LVGL 分组（118 文件，12 分组）
 
@@ -531,6 +531,12 @@ CAN_RX Task (prio 4)             LCD_DEMO Task (prio 3)
 LVGL 嵌套渲染可能较深，当前 LCD_DEMO 栈为 1024 字 (4KB)：
 - 如果出现栈溢出，扩展到 2048 字 (8KB)
 - 可用 FreeRTOS `uxTaskGetStackHighWaterMark()` 监控
+
+### P6 — 工程整理：删除冗余的独立 B 槽工程 `mdk/app_b.uvprojx`
+
+- 现状：`app_b.uvprojx`（单 Target `stm32f429_b`）与 `app.uvprojx` 的 `stm32f429_b` Target 配置完全重复（同 IROM 0x08080000、app_b.sct、OutputName=app_b）
+- 结论：**一个工程两个 Target 即可实现 AB 分区**——两槽各自独立链接（A→app.sct@0x08020000，B→app_b.sct@0x08080000），跳转时 boot 设 `SCB->VTOR` 指向活跃槽，无需独立工程文件
+- 待办：删除 `mdk/app_b.uvprojx`；B 槽镜像改由 `app.uvprojx` 的 `stm32f429_b` Target 编译（产物 `app_b.axf` 一致）；同步更新本 HANDOFF "当前编译状态" 描述
 
 ---
 

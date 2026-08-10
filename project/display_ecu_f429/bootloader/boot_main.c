@@ -8,6 +8,7 @@
 #include "boot_config.h"
 #include "boot_decision.h"
 #include "boot_jump.h"
+#include "boot_query.h"
 #include "key.h"
 #include "ota.h"
 #include "ota_params.h"
@@ -72,7 +73,7 @@ int main(void)
                        ? "App A" : "App B");
             printf("[BOOT] OTA upgrade: press PE2 button within 2s...\r\n");
 
-            if (key_wait_press(2000)) {
+            if (Boot_Query_WaitPress(2000)) {   /* 等待窗口内并行响应芯片信息查询 */
                 printf("[BOOT] BTN pressed, entering OTA mode.\r\n");
             } else {
                 printf("[BOOT] Timeout, jumping to App...\r\n");
