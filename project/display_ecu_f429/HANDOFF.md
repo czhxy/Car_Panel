@@ -379,9 +379,9 @@ CAN_RX Task (prio 4)             LCD_DEMO Task (prio 3)
 
 ## 当前编译状态
 
-- **App 工程**：`mdk/app.uvprojx`，双 Target（stm32f429 / stm32f429_b），armcc V5.06, C99
-- **独立 B 槽工程**：`mdk/app_b.uvprojx`，单 Target（stm32f429_b），与 app.uvprojx 的 B 槽 Target 配置完全一致
-- **Bootloader 工程**：`mdk/boot.uvprojx`，独立编译
+- **App 工程**：`mdk/app.uvprojx`，双 Target（stm32f429 / stm32f429_b），armcc V5.06, C99；**输出目录独立**：A→`Objects_A`、B→`Objects_B`（防 `APP_SLOT_B` 宏污染）
+- **独立 B 槽工程**：`mdk/app_b.uvprojx`，单 Target（stm32f429_b），与 app.uvprojx 的 B 槽 Target 配置完全一致（输出目录同为 `Objects_B`）；**待 P6 删除（冗余，见下一步计划）**
+- **Bootloader 工程**：`mdk/boot.uvprojx`，独立编译，输出目录 `Objects_boot`
 - **LVGL 源文件**：118 个 `.c` 文件通过 12 个 Keil 分组管理（新增加 lv_font_montserrat_28.c）
 - **本工程新增源文件**：`dashboard_images.c`、`mod_dashboard_data.c`、`mod_dashboard_fault.c`、`task_dashboard_ui.c`、`mod_comm_uart.c`（VOFA 临时文件 `usart6.c`/`task_vofa.c` 已删除）
 - **编译状态**：✅ app.uvprojx（A/B 双 Target）与 app_b.uvprojx 均编译通过，`0 Error`（第三方 LVGL/FreeRTOS 库警告为既有、非致命）；A 槽链接 `0x08020000`，B 槽链接 `0x08080000`（app_b.sct），hex/bin 均已生成
@@ -493,6 +493,36 @@ CAN_RX Task (prio 4)             LCD_DEMO Task (prio 3)
 - **临时**：`VOFA_DEBUG` 开关（task_vofa.h），测试完成后置 0 或整段删除（usart6.c/h、task_vofa.c/h、task_entry 引用、mdk 工程引用）
 
 **验证**：app.uvprojx（stm32f429 A 槽）编译 **0 Error 0 Warning**；app_b 仅报既有 `lvgl.h` 缺失问题，未引入新错误（该 app_b 问题已于 2026-08-07 修复，见上文）
+
+---
+
+## 本次已完成 — boot/app Objects 隔离 + RAM 192K 同步 + A/B Target 目录分离（2026-08-11）
+
+**目标**：修复 OTA GUI 芯片查询超时根因、核查 RAM 192K 改动的全面同步、消除 A/B Target 共享 Objects 隐患。**真机验证全部通过。**
+
+**① 查询超时根因（boot/app 共享 Objects 污染）**
+- 根因：boot 与 app 原共用 `mdk/Objects/` 输出目录，boot 编译（带 `BOOTLOADER` 宏）覆盖 app 同名 `.o`（`usart.o`、`system_stm32f4xx.o`）；源文件 mtime 比被覆盖的 `.o` 旧 → Keil 增量编译跳过重编 → app 链接到 boot 版目标文件，`#ifndef BOOTLOADER` 的 USART1 RXNE 中断使能代码缺失 → 芯片查询超时
+- 修复：`boot.uvprojx` 输出目录改为 `.\Objects_boot\`，boot 独立，不再污染 app
+- 验证：`tools/uart_loopback_test.py` **2 PASS / 0 FAIL**；boot 跳转日志 `PC=0x08020281`、App 打印 `@ 0x08020000`
+
+**② RAM 192KB 配置同步**
+- 已确认对：`app.sct` / `app_b.sct`（RW_IRAM1 0x20000000 0x30000）、`boot_jump.c` SP 检查（0x20000000–0x20030000）
+- 已补改：`app.uvprojx` 两个 Target 与 `app_b.uvprojx` 的 Cpu/IRAM/OCR_RVCT9 从 `0x20000` → `0x30000`
+- 文档同步：根 CLAUDE.md / AGENTS.md / 显示域 CLAUDE.md / 本 HANDOFF SRAM 表 / `spi_touch_screen_plan.md`(×2) / `Car_Panel_F429_Project_Plan.md` 全部 **128KB → 192KB**
+- boot 保留 128KB IRAM 合理；查询返回 Flash 地址与 RAM 无关
+
+**③ A/B Target 输出目录分离**
+- 隐患：`app.uvprojx` 的 `stm32f429`（A）与 `stm32f429_b`（B）原共用 `.\Objects\`，但 B 槽 Define 多 `APP_SLOT_B` → `system_stm32f4xx.c` 的 VECT_TAB_OFFSET（0x20000 vs 0x80000）编译出不同 `.o`，A/B 交替编译互相覆盖（**与 boot/app 污染同模式**）
+- 修复：A → `.\Objects_A\`，B → `.\Objects_B\`；`app_b.uvprojx` 输出目录同步改为 `.\Objects_B\`
+- 验证：双 Target 全量重编 **0 Error**（各 24 既有 Warning）；两目录 `system_stm32f4xx.o` md5 不同；A 槽 Reset=`0x08020281`、B 槽 Reset=`0x08080281` 各落本位
+
+**④ 清理**
+- 删除旧 `mdk/Objects/`（121MB 历史混合产物）、`disasm*.txt`（~23MB 诊断临时文件）、`build*.log`
+
+**⑤ 真机验证（用户确认）**
+- A/B 双槽 OTA 均成功：`App A size=342016`、`App B size=342016`（各 334KB，`app_b.bin` 实际大小一致）
+- 启动链路正常：boot 跳转 → VTOR → 180MHz → CAN/UART/LCD/TOUCH/LVGL/DASH 全初始化成功
+- **CAN 通信正常、打印正常**；单节点上电时 `[CAN] TX bus fault` 循环为无 ACK 的预期现象（接动力域后消失），非故障
 
 ---
 
