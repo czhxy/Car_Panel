@@ -550,15 +550,16 @@ void Dashboard_Update(void)
 {
     DashboardState snap = Dashboard_Data_GetSnapshot();
 
-    /* ---- 心跳超时检测 ---- */
+    /* ---- 心跳超时检测（读-判断-写 合并进同一临界区） ----
+     * 用锁内最新值判断，避免基于历史快照把 CAN 刚更新的在线状态误覆盖为 false */
     TickType_t now = xTaskGetTickCount();
-    if (snap.motor_online &&
-        ((now - snap.last_hb_tick) > pdMS_TO_TICKS(HEARTBEAT_TIMEOUT_MS))) {
-        snap.motor_online = false;
-        Dashboard_Data_Lock();
+    Dashboard_Data_Lock();
+    if (g_dash_state.motor_online &&
+        ((now - g_dash_state.last_hb_tick) > pdMS_TO_TICKS(HEARTBEAT_TIMEOUT_MS))) {
         g_dash_state.motor_online = false;
-        Dashboard_Data_Unlock();
     }
+    snap.motor_online = g_dash_state.motor_online;   /* 快照同步为最新值，供下方 UI 渲染 */
+    Dashboard_Data_Unlock();
 
     /* ---- CAN 指示灯（LVGL 原生圆点：始终闪烁，颜色区分状态） ----
      * 在线: 绿色 500ms 闪烁 / 离线: 红色 500ms 闪烁 */

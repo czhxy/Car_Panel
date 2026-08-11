@@ -15,18 +15,24 @@
 
 /* ============================================================
  * Task_UartTx — UART 发送任务
- * 统一消费 TX 队列并发送（Mod_Uart_TxSend 内部临界区与 printf 互斥）
+ * 统一消费「协议包队列 + 日志队列」并发送（各自内部临界区与残留 printf 互斥）
+ * 协议包优先，双队列都空时让出 CPU（与 CAN_TX 任务风格一致）
  * ============================================================ */
 void Task_UartTx(void *pvParameters)
 {
     (void)pvParameters;
 
     while (1) {
-        if (Mod_Uart_TxSend(portMAX_DELAY)) {
-            /* 本轮继续消费队列中剩余的包 */
-            while (Mod_Uart_TxSend(0)) {
-            }
+        /* 协议包优先（查询应答等需及时） */
+        if (Mod_Uart_TxSend(0)) {
+            continue;
         }
+        /* 无协议包则取日志发送 */
+        if (Mod_Uart_LogSend(0)) {
+            continue;
+        }
+        /* 双队列都空，让出 CPU */
+        vTaskDelay(pdMS_TO_TICKS(1));
     }
 }
 

@@ -15,6 +15,7 @@
 #include "bsp_log.h"
 #include "task.h"      /* taskENTER_CRITICAL / taskEXIT_CRITICAL */
 #include <string.h>
+#include <stdio.h>     /* vsnprintf（UART_Log 强符号覆盖用） */
 
 /* ============================================================
  * 弱符号兼容宏
@@ -35,9 +36,13 @@ typedef struct {
 /* ---- 静态变量 ---- */
 static QueueHandle_t UartRxQueue = NULL;   /* 字节队列（ISR 推入，RX 任务消费） */
 static QueueHandle_t UartTxQueue = NULL;   /* 发送包队列（业务推入，TX 任务消费） */
+static QueueHandle_t UartLogQueue = NULL;  /* 日志字符串队列（LOG → TX 任务） */
 
 /* ---- 诊断计数：ISR 累计收字节数（仿 can_rx_isr_cnt 模式） ---- */
 volatile uint32_t uart_rx_isr_cnt = 0;
+
+/* ---- 诊断计数：日志队列满丢弃计数（日志尽力而为） ---- */
+volatile uint32_t uart_log_drop_cnt = 0;
 
 /* ============================================================
  * crc16_calc — CRC16 (poly 0x1021, init 0x0000, MSB first)
@@ -65,14 +70,16 @@ static uint16_t crc16_calc(const uint8_t *data, uint8_t len)
  * ============================================================ */
 void Mod_Uart_Init(void)
 {
-    UartRxQueue = xQueueCreate(UART_RX_QUEUE_LENGTH, sizeof(uint8_t));
-    UartTxQueue = xQueueCreate(UART_TX_QUEUE_LENGTH, sizeof(ModUartTxPacket));
+    UartRxQueue  = xQueueCreate(UART_RX_QUEUE_LENGTH, sizeof(uint8_t));
+    UartTxQueue  = xQueueCreate(UART_TX_QUEUE_LENGTH, sizeof(ModUartTxPacket));
+    UartLogQueue = xQueueCreate(UART_LOG_QUEUE_LENGTH, UART_LOG_BUF_SIZE);
 
-    if (UartRxQueue == NULL || UartTxQueue == NULL) {
+    if (UartRxQueue == NULL || UartTxQueue == NULL || UartLogQueue == NULL) {
         LOG_E("[UART] Queue create FAILED!\r\n");
     } else {
-        LOG_I("[UART] Queues created rx=%u tx=%u\r\n",
-              (unsigned)UART_RX_QUEUE_LENGTH, (unsigned)UART_TX_QUEUE_LENGTH);
+        LOG_I("[UART] Queues created rx=%u tx=%u log=%u\r\n",
+              (unsigned)UART_RX_QUEUE_LENGTH, (unsigned)UART_TX_QUEUE_LENGTH,
+              (unsigned)UART_LOG_QUEUE_LENGTH);
     }
 }
 
@@ -155,6 +162,63 @@ bool Mod_Uart_TxSend(TickType_t timeout)
 
     taskENTER_CRITICAL();
     UART_SendArray(pkt.buf, pkt.len);
+    taskEXIT_CRITICAL();
+    return true;
+}
+
+/* ============================================================
+ * UART_Log — 强符号覆盖 driver/usart.c 的弱符号 UART_Log
+ * vsnprintf 格式化 → 非阻塞入日志队列（xQueueSendFromISR 任务/ISR 通用）
+ *  - 队列满 → 丢弃新日志并累计 uart_log_drop_cnt（日志尽力而为，不阻塞调用方）
+ *  - 队列未建（极端早期）→ 兜底直接 UART_SendString，保持现状行为
+ * 发送统一由 Task_UartTx 经 Mod_Uart_LogSend 消费，日志字节流不再由
+ * 各调用上下文直接写 USART1（解决 ISR 内 printf 阻塞 / 多任务交错问题）
+ * ============================================================ */
+void UART_Log(const char *format, ...)
+{
+    char buf[UART_LOG_BUF_SIZE];
+    va_list arg;
+
+    va_start(arg, format);
+    vsnprintf(buf, sizeof(buf), format, arg);
+    va_end(arg);
+
+    /* 调度器未启动（main 初始化/banner 阶段）时直接发送：
+     * 若此时走 xQueueSendFromISR 会触发 vPortValidateInterruptPriority()，
+     * 而 ulMaxPRIGROUPValue 要到 xPortStartScheduler() 才初始化（初始为 0），
+     * 断言 (AIRCR&0x700) <= 0 必失败 → configASSERT 死循环、无任何输出。
+     * 调度器运行后（含 ISR 上下文）才入队，由 Task_UartTx 统一消费。 */
+    if (xTaskGetSchedulerState() != taskSCHEDULER_RUNNING) {
+        UART_SendString(buf);
+        return;
+    }
+
+    if (UartLogQueue != NULL) {
+        BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+        if (xQueueSendFromISR(UartLogQueue, buf, &xHigherPriorityTaskWoken) != pdPASS) {
+            uart_log_drop_cnt++;
+        }
+        portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+    } else {
+        UART_SendString(buf);
+    }
+}
+
+/* ============================================================
+ * Mod_Uart_LogSend — 从日志队列取一条并发送（发送任务调用）
+ * timeout: 队列空时等待时间（portMAX_DELAY 阻塞 / 0 立即返回）
+ * 返回: 是否成功发送了一条日志
+ * 发送与协议包共用 taskENTER_CRITICAL 临界区，串行不交错
+ * ============================================================ */
+bool Mod_Uart_LogSend(TickType_t timeout)
+{
+    static char buf[UART_LOG_BUF_SIZE];
+
+    if (UartLogQueue == NULL) { return false; }
+    if (xQueueReceive(UartLogQueue, buf, timeout) != pdPASS) { return false; }
+
+    taskENTER_CRITICAL();
+    UART_SendArray((const uint8_t *)buf, (uint16_t)strlen(buf));
     taskEXIT_CRITICAL();
     return true;
 }

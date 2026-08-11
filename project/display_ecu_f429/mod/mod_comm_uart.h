@@ -33,6 +33,10 @@
 #define UART_RX_QUEUE_LENGTH   256U   /* 字节队列（ISR → RX 任务） */
 #define UART_TX_QUEUE_LENGTH   8U     /* 发送包队列（业务 → TX 任务） */
 
+/* ---- 日志队列 ---- */
+#define UART_LOG_QUEUE_LENGTH   16U   /* 日志字符串队列深度 */
+#define UART_LOG_BUF_SIZE       128U  /* 单条日志最大长度（含 NUL） */
+
 /* ---- 帧尺寸限制 ---- */
 #define UART_PKT_MAX_DATA      16U    /* 单帧最大负载长度（chip info 应答 13B） */
 #define UART_PKT_MAX_LEN       (4U + UART_PKT_MAX_DATA + 2U)  /* 头4 + data + crc2 */
@@ -42,10 +46,14 @@
 #define UART_PKT_HEADER2       0x55
 
 /* ---- API 声明 ---- */
-void Mod_Uart_Init(void);                        /* 创建 RX/TX 队列（任务启动前调用） */
+void Mod_Uart_Init(void);                        /* 创建 RX/TX/日志队列（任务启动前调用） */
 void Mod_Uart_RxIRQHandler(void);                /* USART1_IRQHandler 中调用 */
 bool Mod_Uart_SendPacket(uint8_t type, const uint8_t *data, uint8_t len); /* 组包并入 TX 队列 */
 bool Mod_Uart_TxSend(TickType_t timeout);        /* 发送任务：从 TX 队列取一个包并发送 */
+bool Mod_Uart_LogSend(TickType_t timeout);       /* 发送任务：从日志队列取一条日志并发送 */
+
+/* 日志队列满丢弃计数（LOG 尽力而为，队列满丢新日志） */
+extern volatile uint32_t uart_log_drop_cnt;
 bool Mod_Uart_RxDequeue(uint8_t *ch, TickType_t timeout);  /* 接收任务：从字节队列取一字节 */
 void Mod_Uart_RxByte(uint8_t ch);                /* 接收任务：喂一个字节给拼包状态机 */
 

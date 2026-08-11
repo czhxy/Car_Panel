@@ -1,4 +1,5 @@
 #include "main.h"
+#include "mod_comm_uart.h"
 
 extern void Task_Entry_All(void * pvParameters);
 
@@ -15,6 +16,8 @@ int main(void)
     /* SysTick 由 FreeRTOS 的 vPortSetupTimerInterrupt() 自动配置，此处不手动调用 */
     __enable_irq();
     UART_Init();
+    Mod_Uart_Init();   /* 创建 UART 收发/日志队列（调度器启动前 xQueueCreate 合法），
+                        * 保证下方 banner 日志也能入队，由 Task_UartTx 统一发送 */
     LOG_I("\r\n================================\r\n");
     LOG_I("App v%d.%d (STM32F429) @ 0x%08X\r\n",
            (int)APP_VERSION, (int)((APP_VERSION - (int)APP_VERSION) * 10 + 0.5),

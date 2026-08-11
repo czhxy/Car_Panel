@@ -56,7 +56,7 @@ void Task_Entry_All(void * pvParameters)
     Mod_Can_Init();        /* 先创建队列，再初始化硬件使能中断 */
     BSP_CAN_Init();
 
-    Mod_Uart_Init();       /* 创建 UART 收发队列（UART_Init 硬件已在 main 中完成） */
+    /* Mod_Uart_Init 已提前到 main.c（UART_Init 之后）调用，此处不再重复创建队列 */
     Mod_Query_Init();      /* 查询协议业务初始化（确保 mod_query 被链接） */
 
     BSP_SPI_LCD_Init();    /* SPI5 + ILI9341 */

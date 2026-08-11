@@ -120,6 +120,26 @@ void UART_Printf(char *format, ...)
 	UART_SendString(String);
 }
 
+/* ===== 日志发送（弱符号默认实现）=====
+ * 默认等价 printf 直接发送；App 由 mod_comm_uart.c 强符号覆盖为「入 UART 日志队列
+ * → Task_UartTx 统一消费」，bootloader / 无队列场景保持本默认行为。
+ * ===== */
+#if defined(__GNUC__) && !defined(__CC_ARM)
+  #define UART_WEAK __attribute__((weak))
+#else
+  #define UART_WEAK __weak
+#endif
+
+UART_WEAK void UART_Log(const char *format, ...)
+{
+	char buf[128];
+	va_list arg;
+	va_start(arg, format);
+	vsnprintf(buf, sizeof(buf), format, arg);
+	va_end(arg);
+	UART_SendString(buf);
+}
+
 /* USART1_IRQHandler 已在 firmware/cmsis/device/stm32f4xx_it.c 中定义（App 专用），
  * 转发到 task 层 Mod_Uart_RxIRQHandler()，与 CAN1_RX0_IRQHandler 对齐。
  * 本文件为纯硬件层，不依赖任何 task 模块。 */

@@ -52,7 +52,10 @@ void BSP_CAN_Init(void)
     CAN_FilterInitStructure.CAN_FilterScale = CAN_FilterScale_32bit;
     CAN_FilterInit(&CAN_FilterInitStructure);
 
-    /* NVIC 配置 */
+    /* NVIC 配置：仅使能 FIFO0 接收中断。
+     * SCE 错误中断已移除：无对端时 EWG/EPV/BOF 状态转换会触发中断风暴，
+     * 饿死低优先级任务（UI/心跳）。总线恢复靠硬件 ABOM，发送故障兜底在
+     * ModCommCan_Tx 的 NoMailBox 软件状态机，无需中断参与。 */
     NVIC_InitStructure.NVIC_IRQChannel = CAN1_RX0_IRQn;
     NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 5;
     NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;

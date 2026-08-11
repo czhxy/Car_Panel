@@ -12,4 +12,5 @@ void UART_SendString(const char *String);
 void UART_SendNumber(uint32_t Number, uint8_t Length);
 int fputc(int ch, FILE *f);
 void UART_Printf(char *format, ...);
+void UART_Log(const char *format, ...);   /* 弱符号默认实现=printf；App 由 mod_comm_uart 强符号覆盖为队列发送 */
 #endif
