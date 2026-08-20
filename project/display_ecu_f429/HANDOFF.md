@@ -496,6 +496,44 @@ CAN_RX Task (prio 4)             LCD_DEMO Task (prio 3)
 
 ---
 
+## 本次已完成 — IWDG 回滚闭环：新程序启动失败自动回滚（2026-08-20）
+
+**目标**：堵住"新固件 CRC 正确但启动即崩溃/卡死"的恢复漏洞。原实现 COMPLETE 分支 CRC 校验通过即置 IDLE + 清 boot_count——App 崩溃无法被感知，自动回滚形同虚设。
+
+**改动清单**：
+
+| 文件 | 改动 |
+|---|---|
+| `bootloader/boot_wdg.h` | **新增**：IWDG 内联函数（寄存器直操作）。PR=256、RLR=2047 → LSI≈32kHz 下超时 ≈16.4s |
+| `bootloader/boot_jump.c` | 跳转 App 前（`__disable_irq()` 之前）调用 `wdg_start()` 启动 IWDG |
+| `bootloader/boot_decision.c` | COMPLETE 分支 CRC OK 时**不再置 IDLE/清 boot_count**，保持 COMPLETE 等待 App 确认（注释已更新） |
+| `task/task_entry.c` | 新增 `App_Ota_Confirm_Active()`：启动成功后 COMPLETE→IDLE + boot_count=0（不触碰 active_partition，选址仍由 bootloader 唯一负责）；Heartbeat_Task 每 500ms `wdg_feed()` |
+| `mdk/app.uvprojx`（两 Target）、`mdk/app_b.uvprojx` | 新增 "ota_params" Group（ota_params.c/h + flash_control.c/h），App 复用参数区读写，零代码重复 |
+
+**回滚闭环流程**：
+
+```
+OTA 翻转 active → 重启 → boot: COMPLETE, boot_count=1 → CRC OK → 保持 COMPLETE 跳转
+                                                              ↓
+    ┌──────────────────────────┬──────────────────────────────┐
+    │ App 崩溃/卡死（不喂狗）      │ App 正常启动完成               │
+    │ IWDG 16.4s 后复位           │ App_Ota_Confirm_Active()      │
+    │ → boot: boot_count=2 → 3    │ → COMPLETE→IDLE, boot_count=0  │
+    │ → 超限 → rollback_to_other   │ → 结束回滚观察窗口，常驻喂狗    │
+    └──────────────────────────┴──────────────────────────────┘
+```
+
+**编译验证**：
+- boot.uvprojx：0 Error / 0 Warning
+- app.uvprojx（A 槽）：0 Error / 0 Warning
+- app.uvprojx（B 槽）+ app_b.uvprojx：0 Error / 3 Warning（既有 task_ui.c 未引用函数，与本次无关）
+
+**真机验证状态**：⚠️ **尚未烧录验证**（仅编译通过）。待验证用例已加入下方 P1。历史上自动回滚从未在真机跑过（2026-08-11 仅验证了 A/B 双槽正常升级，见上文"boot/app Objects 隔离"章节）。
+
+**遗留**：OTA_STATE_RECEIVING/VERIFY 仍为 dead code（接收全程 ota_state 保持 IDLE，成功才置 COMPLETE）；rollback 时另一槽元数据缺失仅凭 SP 合法性信任。
+
+---
+
 ## 本次已完成 — boot/app Objects 隔离 + RAM 192K 同步 + A/B Target 目录分离（2026-08-11）
 
 **目标**：修复 OTA GUI 芯片查询超时根因、核查 RAM 192K 改动的全面同步、消除 A/B Target 共享 Objects 隐患。**真机验证全部通过。**
@@ -537,6 +575,7 @@ CAN_RX Task (prio 4)             LCD_DEMO Task (prio 3)
 - [x] 验证 Load Bar 交互 → CAN TX 帧发送 + 表盘 RPM 实时变化
 - [x] VOFA+ 接 USART6 (PC6/PC7) 验证 RPM 波形（100ms 间隔，firewater ASCII）
 - [x] 烧录测试：PAUSE 按钮 → 表盘/VOFA/CAN 帧归 0、滑块锁定；再按恢复暂停前值
+- [ ] 真机验证 IWDG 回滚闭环（2026-08-20 实现，未烧录）：①启动即崩溃——App 临时加死循环不喂狗 → OTA 升级 → 观察 `Boot attempt 1/3→2/3→3/3` → `Max boot attempts, rolling back`（每轮 ~16s，共 ~48s+）；②CRC 静态损坏——写坏新槽一字节 → 观察同一超限回滚路径
 
 ### P2 — 动力域 CAN 协议帧对齐 ✅ 已完成（2026-08-06）
 
@@ -587,3 +626,7 @@ LVGL 嵌套渲染可能较深，当前 LCD_DEMO 栈为 1024 字 (4KB)：
 7. **仪表盘图片数据在 Flash**：`dashboard_images.c` 的 const 数据位于 .rodata/Flash；LVGL 绘制缓冲区和 DMA 缓冲均使用主 SRAM，FreeRTOS CCM 堆指针不用于 DMA
 
 8. **mode.bin 图片**：已转换为 24×12 像素数据，但在 `Dashboard_UI_Init()` 中未放置到 UI（计划中的档位 "D" 指示器，Top Bar 已固化此内容）
+
+9. **IWDG 只在 bootloader 跳转时启动**：`wdg_start()` 仅位于 `boot_jump.c` 跳转路径。直接烧录 App 调试不经过 bootloader，无 IWDG 复位干扰；App 内 `wdg_feed()` 对未启动的 IWDG 无副作用
+
+10. **运行期崩溃不回滚**：App 确认启动成功（COMPLETE→IDLE）后死机，IWDG 会复位重启但不再触发回滚（boot_count 已清零）——回滚仅保护"启动窗口"。如需运行期崩溃也回滚需另行设计

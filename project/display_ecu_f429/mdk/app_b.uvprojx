@@ -1447,6 +1447,31 @@
         <Group>
           <GroupName>lvgl_app</GroupName>
         </Group>
+        <Group>
+          <GroupName>ota_params</GroupName>
+          <Files>
+            <File>
+              <FileName>ota_params.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\bootloader\ota_params.c</FilePath>
+            </File>
+            <File>
+              <FileName>ota_params.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\bootloader\ota_params.h</FilePath>
+            </File>
+            <File>
+              <FileName>flash_control.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\bootloader\flash_control.c</FilePath>
+            </File>
+            <File>
+              <FileName>flash_control.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\bootloader\flash_control.h</FilePath>
+            </File>
+          </Files>
+        </Group>
       </Groups>
     </Target>
   </Targets>

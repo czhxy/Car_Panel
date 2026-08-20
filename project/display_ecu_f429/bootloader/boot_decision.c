@@ -110,9 +110,11 @@ int boot_decision(void)
 
             if (calc_crc == crc) {
                 printf("[BOOT] Firmware verified OK.\r\n");
-                g_ota_param.ota_state  = OTA_STATE_IDLE;
-                g_ota_param.boot_count = 0;
-                ota_params_save(&g_ota_param);
+                /* 不再在此置 IDLE/清 boot_count —— 保持 COMPLETE 状态，由 App
+                 * 启动成功后写参数区确认（COMPLETE -> IDLE + boot_count=0，见
+                 * app/task_entry.c App_Ota_Confirm_Active）。
+                 * 这样能覆盖"新固件启动即崩溃"的窗口：App 崩 → IWDG 复位 →
+                 * 再次进入本分支 → boot_count 递增 → 超限则切槽回滚。 */
                 return 1;
             }
 

@@ -7,6 +7,7 @@
   */
 
 #include "boot_jump.h"
+#include "boot_wdg.h"
 #include <stdio.h>
 
 typedef void (*app_entry_t)(void);
@@ -24,6 +25,9 @@ void jump_to_app(uint32_t app_addr)
         printf("[BOOT] ERROR: Invalid stack pointer 0x%08X! Abort jump.\r\n", (unsigned int)sp);
         return;
     }
+
+    /* 启动 IWDG：App 需在 ~16s 内接管喂狗，否则复位回 boot 触发 boot_count 回滚 */
+    wdg_start();
 
     __disable_irq();
 

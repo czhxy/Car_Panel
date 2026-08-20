@@ -14,9 +14,38 @@
 #include "task_ui.h"
 #include "task_comm_can.h"
 #include "task_comm_uart.h"
+#include "boot_wdg.h"
+#include "ota_params.h"
 
 void Task_Entry_All(void * pvParameters);
 void Heartbeat_Task(void * pvParameters);
+
+/* ============================================================
+ * App_Ota_Confirm_Active — 启动成功后确认当前槽运行正常
+ * 把 OTA 参数区从 COMPLETE（待确认）收敛为 IDLE 并清零启动计数，
+ * 结束 bootloader 的回滚观察窗口（boot_count 不再累计）。
+ * 仅改动 ota_state / boot_count，不触碰 active_partition
+ * （分区选择由 bootloader 唯一负责）。
+ * ============================================================ */
+static void App_Ota_Confirm_Active(void)
+{
+    ota_param_t param;
+
+    ota_params_load(&param);
+    if (param.magic != OTA_MAGIC) {
+        return;   /* 参数区无效（如直接烧录 App 运行），无需确认 */
+    }
+
+    if (param.ota_state == OTA_STATE_COMPLETE) {
+        param.ota_state = OTA_STATE_IDLE;
+        param.boot_count = 0;
+        if (ota_params_save(&param) == 0) {
+            LOG_I("[OTA] Active slot confirmed, state COMPLETE -> IDLE.\r\n");
+        } else {
+            LOG_W("[OTA] Confirm save failed!\r\n");
+        }
+    }
+}
 
 /* ============================================================
  * Heartbeat_Task — 心跳任务
@@ -30,6 +59,7 @@ void Heartbeat_Task(void * pvParameters)
     while (1)
     {
         tick++;
+        wdg_feed();   /* 喂 IWDG：bootloader 跳转时已启动，App 常驻喂狗防运行期复位 */
         GPIO_ToggleBits(LED1_Port, LED1_Pin);
 
         if (tick % 2 == 0)
@@ -85,6 +115,9 @@ void Task_Entry_All(void * pvParameters)
         LOG_E("[Main] UART_RX task create failed!\r\n");
     if (xTaskCreate(Task_UI,          "UI",       1024, NULL, 3, NULL) != pdPASS)
         LOG_E("[Main] UI task create failed!\r\n");
+
+    /* 所有子系统初始化 + 任务创建完成 = 启动成功，向 bootloader 确认存活 */
+    App_Ota_Confirm_Active();
 
     vTaskDelete(NULL);
 }
