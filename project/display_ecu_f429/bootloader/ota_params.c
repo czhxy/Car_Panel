@@ -134,28 +134,28 @@ typedef struct {
 static int load_latest(ota_param_t *param, uint32_t *out_seq)
 {
     uint32_t best_seq = 0;
-    int found = 0;
+    int found = 0;// 是否找到有效记录，无则返回 0
 
     memset(param, 0, sizeof(ota_param_t));
 
-    for (uint32_t i = 0; i < OTA_SLOT_COUNT; i++) {
+    for (uint32_t i = 0; i < OTA_SLOT_COUNT; i++) {//遍历所有槽，64kB(append-only总容量)/64B(每个槽)=1024
         const volatile ota_log_record_t *rec =
             (const volatile ota_log_record_t *)(OTA_LOG_ADDR + i * OTA_SLOT_SIZE);
 
-        // 首个非 magic 槽视为日志尾（append-only，无空洞）
+        // 首个非 magic 槽视为已经写入的日志尾（append-only，无空洞）
         if (rec->magic != OTA_MAGIC) {
             break;
         }
 
-        // CRC 不匹配 = 写入中途掉电的损坏记录，跳过
+        // CRC 不匹配 = 该记录写入中途掉电，是损坏记录，跳过
         uint32_t crc = crc32_calc((const uint8_t *)rec, RECORD_CRC_LEN);
         if (crc != rec->crc) {
             continue;
         }
-
+        
         if (!found || rec->seq >= best_seq) {
             best_seq = rec->seq;
-            *param = rec->param;
+            *param = rec->param;//实际更新参数的位置，第一次无条件更新，后面靠 seq 递增逐步覆盖到最新一条
             found = 1;
         }
     }
@@ -203,7 +203,7 @@ int ota_params_init(void)
         flash_if_lock();
         return -1;
     }
-    if (write_record(OTA_LOG_ADDR, &param, 0) != 0) {
+    if (write_record(OTA_LOG_ADDR, &param, 0) != 0) {//将记录写入槽 0
         flash_if_lock();
         return -1;
     }
@@ -214,15 +214,14 @@ int ota_params_init(void)
 // 从 Flash 加载最新有效参数到 RAM
 int ota_params_load(ota_param_t *param)
 {
-    uint32_t seq = 0;
-    int found = load_latest(param, &seq);
+    int found = load_latest(param, NULL);
 
     // 防御：历史遗留 max_boot_count==0 修正并持久化
     if (found && param->magic == OTA_MAGIC && param->max_boot_count == 0) {
         param->max_boot_count = MAX_BOOT_ATTEMPTS;
         ota_params_save(param);
     }
-    return found ? 0 : 0;   // 始终返回 0；调用方据 magic 判断是否有效
+    return 0;   //调用方据 magic 判断是否有效，这里的返回值无实际含义
 }
 
 // 保存参数：追加写下一条记录；日志满则整扇区擦除并重写槽 0
