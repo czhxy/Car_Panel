@@ -74,12 +74,13 @@ flowchart TD
     C1 --> C2{"活跃槽有元数据 ?"}
     C2 -- 无 --> R2
     C2 -- 有 --> C3["crc32_flash(active) 校验"]
-    C3 -- 通过 --> R1
-    C3 -- 失败 --> C4{"boot_count >= max_boot_count(3) ?"}
-    C4 -- 否 --> C5["NVIC_SystemReset() 重启重试"]
+    C3 --> C4{"boot_count >= max_boot_count(3) ?"}
     C4 -- 是 --> C6["rollback_to_other() 切槽"]
     C6 -- 成功 --> C7["置 IDLE + boot_count=0 + 保存 → return 1"]
     C6 -- 失败 --> R2
+    C4 -- 否 --> C5{"CRC 匹配 ?"}
+    C5 -- 通过 --> R1
+    C5 -- 失败 --> C8["NVIC_SystemReset() 重启重试"]
 
     S -- FAILED --> R2
     S -- 未知 --> R2
@@ -89,7 +90,7 @@ flowchart TD
 
 1. **真 AB 回滚 = 切槽，零 Flash 搬运**：A/B 各存完整镜像，OTA 只写非活跃槽，旧固件原槽保留。回滚时 `rollback_to_other()` 仅翻转 `active_partition`。
 
-2. **COMPLETE 状态不主动置 IDLE**：CRC 通过后**保持 COMPLETE 并返回 1**，把"确认存活"的责任交给 App。这覆盖「新固件启动即崩溃」的窗口——App 崩 → IWDG 复位回 boot → `boot_count` 再次递增 → 达 3 次即切槽回滚。
+2. **超限优先于 CRC 校验**：每次进 COMPLETE 先 `boot_count++` 并持久化，随后判断是否达 `max_boot_count`——达上限直接 `rollback_to_other()` 切槽回滚，**不校验 CRC**；未超限才做 CRC 校验（通过则保持 COMPLETE 返回 1，把"确认存活"的责任交给 App；失败则重启重试）。这覆盖「新固件 CRC 正确但启动即崩溃」的窗口——App 崩 → IWDG 复位回 boot → `boot_count` 再次递增 → 达 3 次即切槽回滚。
 
 3. **boot_count 持久化**：每次进 COMPLETE 分支先 `boot_count++` 并 `ota_params_save()`，重启后计数延续。
 

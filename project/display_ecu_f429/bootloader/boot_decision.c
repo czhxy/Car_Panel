@@ -108,17 +108,10 @@ int boot_decision(void)
             printf("[BOOT] CRC32: saved=0x%08X calc=0x%08X\r\n",
                    (unsigned int)crc, (unsigned int)calc_crc);
 
-            if (calc_crc == crc) {
-                printf("[BOOT] Firmware verified OK.\r\n");
-                /* 不再在此置 IDLE/清 boot_count —— 保持 COMPLETE 状态，由 App
-                 * 启动成功后写参数区确认（COMPLETE -> IDLE + boot_count=0，见
-                 * app/task_entry.c App_Ota_Confirm_Active）。
-                 * 这样能覆盖"新固件启动即崩溃"的窗口：App 崩 → IWDG 复位 →
-                 * 再次进入本分支 → boot_count 递增 → 超限则切槽回滚。 */
-                return 1;
-            }
-
-            // CRC 失败，检查是否超限
+            /* 先判断启动失败次数是否已超过最大上限：超限则直接切槽回滚，
+             * 不再校验 CRC。这样能覆盖"新固件 CRC 正确但启动即崩溃"的窗口
+             * —— App 崩 → IWDG 复位 → 再次进入本分支 → boot_count 递增 →
+             * 达上限即回滚，而非无限重试。 */
             if (g_ota_param.boot_count >= g_ota_param.max_boot_count) {
                 printf("[BOOT] Max boot attempts, rolling back to other slot...\r\n");
                 if (rollback_to_other() == 0) {
@@ -131,7 +124,15 @@ int boot_decision(void)
                 return 0;
             }
 
-            // 未超限：重启重试（boot_count 已持久化，重启后递增；超限则切槽回滚）
+            if (calc_crc == crc) {
+                printf("[BOOT] Firmware verified OK.\r\n");
+                /* 保持 COMPLETE 状态，由 App 启动成功后写参数区确认
+                 *（COMPLETE -> IDLE + boot_count=0，见 app/task_entry.c
+                 * App_Ota_Confirm_Active）。 */
+                return 1;
+            }
+
+            // CRC 失败且未超限：重启重试（boot_count 已持久化，重启后递增；达上限则回滚）
             printf("[BOOT] CRC mismatch (attempt %u/%u), reboot to retry...\r\n",
                    g_ota_param.boot_count, g_ota_param.max_boot_count);
             NVIC_SystemReset();
