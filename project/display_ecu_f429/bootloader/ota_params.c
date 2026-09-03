@@ -123,7 +123,7 @@ uint32_t crc32_flash(uint32_t addr, uint32_t len)
 
 typedef struct {
     uint32_t      magic;     // OTA_MAGIC
-    uint32_t      seq;       // 单调递增序号，用于选最新
+    uint32_t      seq;       // 槽内序号（= 槽索引，整区擦除后归零）
     ota_param_t   param;     // 载荷（52B，packed）
     uint32_t      crc;       // crc32 覆盖 magic+seq+param（即本字段之前的全部字节）
 } ota_log_record_t;          // = 64B（无填充：param@8 起 4 字节对齐，crc@60 起 4 字节对齐）
@@ -131,7 +131,7 @@ typedef struct {
 #define RECORD_CRC_LEN      (sizeof(ota_log_record_t) - sizeof(uint32_t))   // 60
 
 // ===== 内部：纯读取最新有效记录（不触发 save，避免递归） =====
-static int load_latest(ota_param_t *param, uint32_t *out_seq)
+static int load_latest(ota_param_t *param)
 {
     uint32_t best_seq = 0;
     int found = 0;// 是否找到有效记录，无则返回 0
@@ -153,14 +153,15 @@ static int load_latest(ota_param_t *param, uint32_t *out_seq)
             continue;
         }
         
+        // seq 即槽号（槽内序号），顺序递增，最后扫描到的一条即最新记录；
+        // 用 >= 比较保留对扫描顺序的防御性（未来若改扫描方式仍能选到最新）
         if (!found || rec->seq >= best_seq) {
             best_seq = rec->seq;
-            *param = rec->param;//实际更新参数的位置，第一次无条件更新，后面靠 seq 递增逐步覆盖到最新一条
+            *param = rec->param;
             found = 1;
         }
     }
 
-    if (out_seq) *out_seq = found ? best_seq : 0;
     return found;
 }
 
@@ -214,7 +215,7 @@ int ota_params_init(void)
 // 从 Flash 加载最新有效参数到 RAM
 int ota_params_load(ota_param_t *param)
 {
-    int found = load_latest(param, NULL);
+    int found = load_latest(param);
 
     // 防御：历史遗留 max_boot_count==0 修正并持久化
     if (found && param->magic == OTA_MAGIC && param->max_boot_count == 0) {
@@ -227,12 +228,6 @@ int ota_params_load(ota_param_t *param)
 // 保存参数：追加写下一条记录；日志满则整扇区擦除并重写槽 0
 int ota_params_save(const ota_param_t *param)
 {
-    ota_param_t cur;
-    uint32_t cur_seq;
-    load_latest(&cur, &cur_seq);
-
-    uint32_t new_seq = cur_seq + 1;
-
     flash_if_init();
 
     // 寻找首个已擦除槽（magic != OTA_MAGIC）
@@ -247,18 +242,18 @@ int ota_params_save(const ota_param_t *param)
     }
 
     if (free_slot < OTA_SLOT_COUNT) {
-        // 追加写已擦除槽，无需擦除
-        if (write_record(OTA_LOG_ADDR + free_slot * OTA_SLOT_SIZE, param, new_seq) != 0) {
+        // 追加写已擦除槽，seq = 槽号（无需擦除）
+        if (write_record(OTA_LOG_ADDR + free_slot * OTA_SLOT_SIZE, param, free_slot) != 0) {
             flash_if_lock();
             return -1;
         }
     } else {
-        // 日志满：整扇区擦除后重写槽 0（每 1024 次 save 触发一次）
+        // 日志满：整扇区擦除后重写槽 0，seq 归零（每 1024 次 save 触发一次）
         if (flash_if_erase(OTA_LOG_ADDR, OTA_LOG_SIZE) != 0) {
             flash_if_lock();
             return -1;
         }
-        if (write_record(OTA_LOG_ADDR, param, new_seq) != 0) {
+        if (write_record(OTA_LOG_ADDR, param, 0) != 0) {
             flash_if_lock();
             return -1;
         }
